@@ -1,0 +1,11 @@
+[project]
+name = "ayman-cal"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "dataretrieval>=1.0.12",
+    "matplotlib>=3.10.5",
+    "pandas>=2.3.2",
+    "spotpy>=1.6.6",
+    "xarray>=2025.8.0",
+]
