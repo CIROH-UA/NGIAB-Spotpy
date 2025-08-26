@@ -10,5 +10,7 @@ dependencies = [
     "pandas>=2.3.2",
     "seaborn>=0.13.2",
     "spotpy>=1.6.6",
+    "tensorboard>=2.20.0",
+    "tensorboardx>=2.6.4",
     "xarray>=2025.8.0",
 ]

@@ -26,7 +26,8 @@ troute_output_path = (
     f"{data_root}/gage-{gage_id}/outputs/troute/{get_troute_output_name(realization_path)}"
 )
 data_dir = f"{data_root}/gage-{gage_id}"
-# print(troute_output_path)
+tensorboard_logdir = f"{data_dir}/tensorboard_logs"  # TensorBoard logs location
+
 # Optional: Retrieve and save observed flow
 if not Path(observed_flow_path).exists():
     process_usgs_streamflow(gage_id, start_date, end_date, output_path=observed_flow_path)
@@ -44,6 +45,7 @@ best_params = run_spotpy(
     objective_function="KGE",
     repetitions=200,
     dds_trials=4,
+    tensorboard_logdir=tensorboard_logdir,  # Add TensorBoard logging
 )
 
 # save the best parameters to a file
@@ -52,3 +54,6 @@ with open(f"{data_dir}/spotpy/best_params.csv", "w") as file:
     file.write(header + "\n")
     values = ",".join([str(value) for value in best_params[0]])
     file.write(values + "\n")
+
+print("\nTo view TensorBoard results, run:")
+print(f"tensorboard --logdir={tensorboard_logdir}")
