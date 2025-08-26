@@ -14,27 +14,23 @@ def get_troute_output_name(path):
 
 gage_id = "10109001"
 feature_id = 2861391
-start_date = "2018-09-30"
-end_date = "2022-09-30"
+start_date = "2015-10-01"
+end_date = "2019-12-01"
 training_start_date = "2018-09-30"
 # data_root = "/home/jovyan/ngiab_preprocess_output"
-data_root = "/home/josh/work/ayman_cal/data/gage-10109001"
+data_root = "/home/josh/work/ayman_cal/data"
 
 realization_path = f"{data_root}/gage-{gage_id}/config/realization.json"
 observed_flow_path = f"{data_root}/{gage_id}_observed_flow.pkl"
 troute_output_path = (
     f"{data_root}/gage-{gage_id}/outputs/troute/{get_troute_output_name(realization_path)}"
 )
-cfe_dir = f"{data_root}/gage-{gage_id}/config/cat_config/CFE"
 data_dir = f"{data_root}/gage-{gage_id}"
-noah_path = f"{data_root}/gage-{gage_id}/config/noah_owp/MPTABLE.TBL"
 # print(troute_output_path)
 # Optional: Retrieve and save observed flow
 if not Path(observed_flow_path).exists():
     process_usgs_streamflow(gage_id, start_date, end_date, output_path=observed_flow_path)
-# best_params = run_spotpy(gage_id, start_date, end_date, training_start_date,
-#                          observed_flow_path, troute_output_path, cfe_dir, noah_path,
-#                          data_dir, feature_id, repetitions=1000)
+
 best_params = run_spotpy(
     gage_id,
     start_date,
@@ -42,11 +38,17 @@ best_params = run_spotpy(
     training_start_date,
     observed_flow_path,
     troute_output_path,
-    cfe_dir,
-    noah_path,
     data_dir,
     feature_id,
     algorithm="DDS",
+    objective_function="KGE",
     repetitions=200,
-    dds_trials=1,
+    dds_trials=4,
 )
+
+# save the best parameters to a file
+with open(f"{data_dir}/spotpy/best_params.csv", "w") as file:
+    header = ",".join([name[3:] for name in best_params[0].dtype.names])
+    file.write(header + "\n")
+    values = ",".join([str(value) for value in best_params[0]])
+    file.write(values + "\n")

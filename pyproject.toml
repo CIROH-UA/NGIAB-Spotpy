@@ -3,9 +3,12 @@ name = "ayman-cal"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "bokeh>=3.7.3",
     "dataretrieval>=1.0.12",
     "matplotlib>=3.10.5",
+    "netcdf4>=1.7.2",
     "pandas>=2.3.2",
+    "seaborn>=0.13.2",
     "spotpy>=1.6.6",
     "xarray>=2025.8.0",
 ]

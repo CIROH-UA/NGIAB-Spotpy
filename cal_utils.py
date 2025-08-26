@@ -1,59 +1,29 @@
+import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import spotpy
 import spotpy.objectivefunctions as objf
 import xarray as xr
+from dataretrieval import nwis
 from spotpy.parameter import Uniform
+
+from plots import (
+    create_interactive_plots,
+    plot_bestmodelrun,
+    plot_parameter_correlation,
+    plot_parameterInteraction,
+    plot_parametertrace,
+)
 
 sys.path.append("/ngen/pyngiab")
 
 
-def update_cfe_parameters(directory, parameters):
-    """
-    Updates specific parameters in all files within a directory.
-
-    Parameters:
-    - directory (str): Path to the directory containing the files to update.
-    - parameters (dict): Dictionary of parameters and their new values.
-    """
-    # Ensure the directory exists
-    if not os.path.exists(directory):
-        print(f"Directory '{directory}' does not exist.")
-        return
-
-    # Loop through all files in the directory
-    for filename in os.listdir(directory):
-        file_path = os.path.join(directory, filename)
-
-        # Skip directories
-        if not os.path.isfile(file_path):
-            continue
-
-        # Read the file content
-        with open(file_path, "r") as file:
-            lines = file.readlines()
-
-        # Update the parameters
-        updated_lines = []
-        for line in lines:
-            for key, new_value in parameters.items():
-                if line.startswith(key + "="):
-                    line = f"{key}={new_value}\n"
-            updated_lines.append(line)
-
-        # Write the updated content back to the file
-        with open(file_path, "w") as file:
-            file.writelines(updated_lines)
-
-    print(f"Parameters updated in all files within '{directory}'.")
-
-
-def update_noah_parameters(file_path, param_updates):
+def update_parameters(file_path, param_updates, model_type_name):
     """
     Update selected NOAH LSM parameters in the MPTABLE.TBL file.
 
@@ -61,52 +31,15 @@ def update_noah_parameters(file_path, param_updates):
         directory_path (str): Path to the 'noah_om/parameters' directory.
         param_updates (dict): Keys are parameter names (e.g., 'MFSNO'), values are strings to insert.
     """
-
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"MPTABLE.TBL not found at {file_path}")
-
-    with open(file_path, "r") as file:
-        lines = file.readlines()
-        print(f"Updating parameters in {file_path}...")
-
-    is27 = True
-    for key, value in param_updates.items():
-        if key == "MFSNO":
-            MFSNO27_str = ", ".join([f"{value}"] * 27)
-            MFSNO20_str = ",   ".join([f"{value}"] * 19)
-            lines[220] = f" {key} =  {value},   {MFSNO20_str},\n"
-
-        for i, line in enumerate(lines):
-            if line.strip().startswith(f"{key}"):
-                if key == "MFSNO" and is27:
-                    lines[i] = f" {key} =  {MFSNO27_str},\n"
-                    is27 = False
-                else:
-                    lines[i] = f"  {key} = {value}\n"
-                break
-
-    with open(file_path, "w") as file:
-        file.writelines(lines)
-
-
-# NextGen calibration set-up
-
-# Ensure hydroeval is installed
-try:
-    import hydroeval
-except ImportError:
-    import subprocess
-
-    subprocess.check_call(["pip", "install", "hydroeval"])
-
-# Ensure dataretrieval is installed
-try:
-    from dataretrieval import nwis
-except ImportError:
-    import subprocess
-
-    subprocess.check_call(["pip", "install", "dataretrieval"])
-    from dataretrieval import nwis
+    with open(file_path, "r") as f:
+        realization = json.load(f)
+    models = realization["global"]["formulations"][0]["params"]["modules"]
+    for model in models:
+        if model["params"]["model_type_name"] == model_type_name:
+            model["params"]["model_params"] = param_updates
+            break
+    with open(file_path, "w") as f:
+        json.dump(realization, f, indent=4)
 
 
 # === Utility Function to Retrieve and Preprocess USGS Streamflow ===
@@ -138,8 +71,7 @@ class NextGenSetup:
         training_start_date,
         observed_flow_path,
         troute_output_path,
-        cfe_dir,
-        noah_path,
+        data_dir,
     ):
         self.gage_id = gage_id
         self.training_start_date = pd.to_datetime(training_start_date)
@@ -152,53 +84,53 @@ class NextGenSetup:
         ]
         self.observed = self.observed.set_index("Time")
         self.troute_output_path = troute_output_path
-        self.cfe_parameters_directory_path = cfe_dir
-        self.noah_params_path = noah_path
+        self.realization_path = Path(data_dir) / "config" / "realization.json"
 
     def write_config(self, params):
         param_map = {
-            "soil_params.b": params[0],
-            "soil_params.satpsi": params[1],
-            "soil_params.satdk": params[2],
-            "soil_params.smcmax": params[3],
+            "b": params[0],
+            "satpsi": params[1],
+            "satdk": params[2],
+            "maxsmc": params[3],
             "expon": params[4],
-            "soil_params.slop": params[5],
-            "K_nash_subsurface": params[6],
-            "K_lf": params[7],
+            "slope": params[5],
+            "Kn": params[6],
+            "Klf": params[7],
         }
 
-        update_cfe_parameters(self.cfe_parameters_directory_path, param_map)
+        update_parameters(self.realization_path, param_map, "CFE")
 
         # Create updated NOAH parameters dictionary
         noah_param_updates = {
             "MFSNO": params[8],  # Pass float directly
             "MP": params[9],
             "RSURF_EXP": params[10],
-            "SNOW_EMIS": params[11],
-            "CWP": params[12],
-            "VCMX25": params[13],
-            "RSURF_SNOW": params[14],
-            "SCAMAX": params[15],
+            # "SNOW_EMIS": params[11],
+            "CWP": params[11],
+            "VCMX25": params[12],
+            "RSURF_SNOW": params[13],
+            "SCAMAX": params[14],
         }
 
-        update_noah_parameters(self.noah_params_path, noah_param_updates)
+        update_parameters(self.realization_path, noah_param_updates, "NoahOWP")
+
         # Append run info to summary_df
 
     def run_model(self, data_dir):
-        troute_output_path = (
-            f"/home/jovyan/ngiab_preprocess_output/gage-{self.gage_id}/outputs/troute/"
-        )
-        for filename in os.listdir(troute_output_path):
-            full_file_path = os.path.join(troute_output_path, filename)
-            if os.path.exists(full_file_path):
-                os.remove(full_file_path)
-                print("T-route has been removed from previous run")
+        troute_output_folder = Path(data_dir) / "outputs" / "troute"
+        for file in troute_output_folder.glob("*.nc"):
+            file.unlink()
+            print("T-route has been removed from previous run")
         try:
             # model = PyNGIAB(data_dir, serial_execution_mode=True)
             # model.run()
-            command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast /ngen/ngen/data/ auto 100 local'
-            subprocess.run(command, shell=True)
+            command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast_cal /ngen/ngen/data/ auto 100 local'
+            # command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast /ngen/ngen/data/ auto 100 local'
+            subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
             print("Next Gen run complete.")
+            # route_command = f"route_rs {data_dir}"
+            # subprocess.run(route_command, shell=True, stdout=subprocess.DEVNULL)
+            # print("routing complete.")
         except:
             print("Next Gen run failed.")
 
@@ -226,48 +158,23 @@ class SpotpySetup:
     MFSNO = Uniform(low=1.0, high=5.0)  # multiplier on snowfall melt factor
     MP = Uniform(3.6, 12.6)
     RSURF_EXP = Uniform(4.5, 8.5)
-    SNOW_EMIS = Uniform(low=0.90, high=1.0)  # snow emissivity
+    # SNOW_EMIS = Uniform(low=0.90, high=1.0)  # snow emissivity
     CWP = Uniform(0.09, 0.36)
     VCMX25 = Uniform(24.0, 112.0)
     RSURF_SNOW = Uniform(0.001, 50.0)
     SCAMAX = Uniform(0.7, 1.0)
 
-    def __init__(self, model_setup, data_dir, feature_id, algorithm_minimize):
-        self.algorithm_minimize = algorithm_minimize
+    def __init__(self, model_setup, data_dir, feature_id, invert_objective, objective_function):
+        self.obj_func = objective_function
+        self.invert_objective = invert_objective
         self.model = model_setup
         self.data_dir = data_dir
         self.feature_id = feature_id
         self.run_id = 0
-        # self.best_like = -np.inf
-        self.best_like = np.inf
-        self.best_run = -1
 
         # Ensure spotpy directory exists
-        self.output_dir = "/home/jovyan/spotpy"
-        os.makedirs(self.output_dir, exist_ok=True)
-
-        self.summary_df = pd.DataFrame(
-            columns=[
-                "Run_ID",
-                "soil_params.b",
-                "satpsi",
-                "satdk",
-                "maxsmc",
-                "expon",
-                "slope",
-                "K_nash_subsurface",
-                "K_lf",
-                "MFSNO",
-                "MP",
-                "RSURF_EXP",
-                "SNOW_EMIS",
-                "CWP",
-                "VCMX25",
-                "RSURF_SNOW",
-                "SCAMAX",
-                "KGE",
-            ]
-        )
+        self.output_dir = f"{data_dir}/spotpy"
+        os.makedirs(f"{self.output_dir}/plots/iterations", exist_ok=True)
 
     def simulation(self, vector):
         self.current_params = vector
@@ -279,65 +186,45 @@ class SpotpySetup:
         return self.model.observed.values.squeeze()[1:]
 
     def objectivefunction(self, simulation, evaluation):
-        rmse = objf.rmse(simulation, evaluation)
-        if not self.algorithm_minimize:
-            rmse = -rmse
-        return rmse
+        if len(simulation) != len(evaluation):
+            raise ValueError("simulation and observation are not equal length")
 
-        # kge = self.kling_gupta_efficiency(simulation, evaluation)
+        if not self.obj_func:
+            # This is used if not overwritten by user
+            like = objf.rmse(evaluation, simulation)
+        else:
+            # Way to ensure flexible spot setup class
+            like = self.obj_func(evaluation, simulation)
 
         # Plot each calibration iteration
         plt.figure(figsize=(10, 4))
         plt.plot(evaluation, label="Observed", color="black")
         plt.plot(simulation, label="Simulated", linestyle="--")
-        # plt.text(0.5, 0.9, f'KGE: {kge:.2f}', transform=plt.gca().transAxes, fontsize=12)
-        plt.text(0.5, 0.9, f"RMSE: {rmse:.2f}", transform=plt.gca().transAxes, fontsize=12)
+        plt.text(
+            0.5, 0.9, f"objective_function: {like:.2f}", transform=plt.gca().transAxes, fontsize=12
+        )
         plt.legend()
         plt.title(f"CFE-NOM-TR Streamflow for Gage {self.model.gage_id} - Run {self.run_id}")
         plt.xlabel("Time step")
         plt.ylabel("Streamflow [m3/sec]")
-        plt.savefig(f"{self.output_dir}/spotpy_run_{self.run_id}.png")
+        plt.savefig(
+            f"{self.output_dir}/plots/iterations/spotpy_run_{str(self.run_id).zfill(4)}.png"
+        )
         plt.close()
 
-        # Append run info to summary_df
-        param_row = {
-            "Run_ID": self.run_id,
-            "soil_params.b": self.current_params[0],
-            "satpsi": self.current_params[1],
-            "satdk": self.current_params[2],
-            "maxsmc": self.current_params[3],
-            "expon": self.current_params[4],
-            "slope": self.current_params[5],
-            "K_nash_subsurface": self.current_params[6],
-            "K_lf": self.current_params[7],
-            "MFSNO": self.current_params[8],
-            "MP": self.current_params[9],
-            "RSURF_EXP": self.current_params[10],
-            "SNOW_EMIS": self.current_params[11],
-            "CWP": self.current_params[12],
-            "VCMX25": self.current_params[13],
-            "RSURF_SNOW": self.current_params[14],
-            "SCAMAX": self.current_params[15],
-            "RMSE": rmse,
-        }
-        # 'KGE': kge
-        #             }
-        self.summary_df.loc[len(self.summary_df)] = param_row
-        print(self.summary_df.tail(1).to_string(index=False))
-
-        # if kge > self.best_like:
-        #     self.best_like = kge
-        #     self.best_run = self.run_id
-
-        # self.run_id += 1
-        # return kge
-
-        if rmse < self.best_like:
-            self.best_like = rmse
-            self.best_run = self.run_id
-
         self.run_id += 1
-        return rmse
+        if self.invert_objective:
+            return -like
+        else:
+            return like
+
+
+def plot_results(results, observation_data, output_dir):
+    plot_parametertrace(results, output_dir)
+    plot_parameterInteraction(results, output_dir)
+    plot_bestmodelrun(results, observation_data, output_dir)
+    plot_parameter_correlation(results, output_dir)
+    create_interactive_plots(results, observation_data, output_dir)
 
 
 # === Function to Run SPOTPY Calibration ===
@@ -348,11 +235,10 @@ def run_spotpy(
     training_start_date,
     observed_flow_path,
     troute_output_path,
-    cfe_dir,
-    noah_path,
     data_dir,
     feature_id,
     algorithm,
+    objective_function,
     repetitions=25,
     dds_trials=5,
 ):
@@ -364,75 +250,39 @@ def run_spotpy(
         training_start_date,
         observed_flow_path,
         troute_output_path,
-        cfe_dir,
-        noah_path,
+        data_dir,
     )
 
-    # set up optimizer
-    if algorithm == "SCE":
-        algorithm_minimize = True
-    elif algorithm == "DDS":
-        algorithm_minimize = False
+    if objective_function == "KGE":
+        best_is_higher = True
+        obj_func = spotpy.objectivefunctions.kge
+    elif objective_function == "RMSE":
+        best_is_higher = False
+        obj_func = spotpy.objectivefunctions.rmse
 
-    optimizer = SpotpySetup(model_setup, data_dir, feature_id, algorithm_minimize)
+    if algorithm == "DDS":
+        algorithm_maximizes = True
+    elif algorithm == "SCE":
+        algorithm_maximizes = False
 
+    invert_objective = best_is_higher != algorithm_maximizes
+
+    optimizer = SpotpySetup(model_setup, data_dir, feature_id, invert_objective, obj_func)
+    db_name = f"{optimizer.output_dir}/spotpy_results_{algorithm}"
     # SCE hyperparameters
     if algorithm == "SCE":
-        sampler = spotpy.algorithms.sceua(
-            optimizer, dbname=f"spotpy_results_{gage_id}", dbformat="csv"
-        )
+        sampler = spotpy.algorithms.sceua(optimizer, dbname=db_name, dbformat="csv")
         sampler.sample(repetitions, ngs=20)
 
     ## ADD hyperparameters
     elif algorithm == "DDS":
-        sampler = spotpy.algorithms.dds(
-            optimizer, dbname=f"spotpy_results_{gage_id}", dbformat="csv"
-        )
+        sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv")
         sampler.sample(repetitions, trials=int(dds_trials))
+    # results = spotpy.analyser.load_csv_results(db_name)
 
-    results = spotpy.analyser.load_csv_results(f"spotpy_results_{gage_id}")
-    best_params = spotpy.analyser.get_best_parameterset(results, maximize=False)
+    results = sampler.getdata()
+    plot_results(results, optimizer.evaluation(), f"{data_dir}/spotpy/plots")
 
-    # Plot objective function trace
-    fig = plt.figure(1, figsize=(9, 5))
-    plt.plot(results["like1"])
-    # plt.ylabel('KGE')
-    plt.ylabel("RMSE")
-    plt.xlabel("Iteration")
-    fig.savefig("/home/jovyan/spotpy/SCEUA_objectivefunctiontrace.png", dpi=300)
-
-    # Plot best model run
-    bestindex, bestobjf = spotpy.analyser.get_minlikeindex(results)
-    best_model_run = results[bestindex]
-    fields = [word for word in best_model_run.dtype.names if word.startswith("sim")]
-    best_simulation = list(best_model_run[fields])
-    time_index = pd.date_range(start=training_start_date, periods=len(best_simulation), freq="D")
-
-    fig = plt.figure(figsize=(16, 9))
-    ax = plt.subplot(1, 1, 1)
-    ax.plot(
-        time_index,
-        best_simulation,
-        color="black",
-        linestyle="solid",
-        label="Best objf.=" + str(bestobjf),
-    )
-    ax.plot(time_index, optimizer.evaluation(), "r.", markersize=3, label="Observation data")
-    plt.xlabel("Date")
-    plt.ylabel("Streamflow (m3/sec)")
-    plt.legend(loc="upper right")
-    fig.savefig("/home/jovyan/spotpy/SCEUA_best_modelrun.png", dpi=300)
-
-    print(f"Best objective function value: {optimizer.best_like}")
-    print(f"Best run ID: {optimizer.best_run}")
-
-    # Save summary of all runs to csv file with highlight for best KGE/RMSE
-    summary_csv_path = os.path.join(optimizer.self.output_dir, f"spotpy_summary_{gage_id}.csv")
-    # best_kge_index = optimizer.summary_df['KGE'].idxmax()
-    best_rmse_index = optimizer.summary_df["RMSE"].idxmin()
-
-    optimizer.summary_df.to_csv(summary_csv_path)
-
-    print(f"\nSaved highlighted summary to: {summary_csv_path}")
+    best_params = spotpy.analyser.get_best_parameterset(results, maximize=best_is_higher)
 
     return best_params
