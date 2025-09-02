@@ -17,74 +17,167 @@ sns.set_context("notebook")
 def plot_parametertrace(
     results, parameternames=None, fig_name="Parameter_trace.png", output_folder=None
 ):
-    if not output_folder:
-        output_folder = "./"
+    """Plot parameter traces using seaborn styling"""
     if not parameternames:
         parameternames = get_parameternames(results)
-    fig = plt.figure(figsize=(16, len(parameternames) * 3))
-    names = ""
-    i = 1
-    for name in parameternames:
-        ax = plt.subplot(len(parameternames), 1, i)
-        ax.plot(results["par" + name], label=name)
-        names += name + "_"
-        ax.set_ylabel(name)
-        if i == len(parameternames):
-            ax.set_xlabel("Repetitions")
-        if i == 1:
-            ax.set_title("Parametertrace")
-        ax.legend()
-        i += 1
-    fig.savefig(output_folder + fig_name)
-    text = 'The figure as been saved as "' + output_folder + fig_name
-    print(text)
+
+    # Create figure with seaborn styling
+    fig, axes = plt.subplots(len(parameternames), 1, figsize=(16, len(parameternames) * 3))
+
+    # Handle single parameter case
+    if len(parameternames) == 1:
+        axes = [axes]
+
+    # Set color palette
+    colors = sns.color_palette("husl", len(parameternames))
+
+    for i, name in enumerate(parameternames):
+        ax = axes[i]
+
+        # Use seaborn line plot styling
+        data = results["par" + name]
+        x_range = range(len(data))
+
+        # Plot with seaborn styling
+        sns.lineplot(x=x_range, y=data, ax=ax, color=colors[i], linewidth=1.5)
+
+        # Customize axes
+        ax.set_ylabel(name, fontsize=11)
+        ax.set_xlabel("Repetitions" if i == len(parameternames) - 1 else "")
+
+        # Add title only to first subplot
+        if i == 0:
+            ax.set_title("Parameter Trace", fontsize=14, fontweight="bold")
+
+        # Add legend with parameter name
+        ax.legend([name], loc="upper right", frameon=True, fancybox=True)
+
+        # Add subtle grid
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    # Handle output folder
+    if output_folder:
+        import os
+
+        os.makedirs(output_folder, exist_ok=True)
+        save_path = os.path.join(output_folder, fig_name)
+    else:
+        save_path = fig_name
+
+    fig.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f'The figure has been saved as "{save_path}"')
 
 
 def plot_parameterInteraction(results, fig_name="ParameterInteraction.png", output_folder=None):
-    if not output_folder:
-        output_folder = "./"
-    parameterdistribtion = get_parameters(results)
+    """Create parameter interaction matrix using seaborn pairplot"""
+    parameterdistribution = get_parameters(results)
     parameternames = get_parameternames(results)
-    df = pd.DataFrame(np.asarray(parameterdistribtion).T.tolist(), columns=parameternames)
 
-    pd.plotting.scatter_matrix(df, alpha=0.2, figsize=(12, 12), diagonal="kde")
-    plt.savefig(output_folder + fig_name, dpi=300)
+    # Create DataFrame
+    df = pd.DataFrame(np.asarray(parameterdistribution).T.tolist(), columns=parameternames)
+
+    # Create pairplot with seaborn
+    g = sns.pairplot(
+        df,
+        diag_kind="kde",
+        plot_kws={"alpha": 0.6, "s": 10, "edgecolor": None, "linewidth": 0},
+        diag_kws={"linewidth": 2, "alpha": 0.7},
+        corner=False,
+    )
+
+    # Customize the plot
+    g.fig.suptitle("Parameter Interactions", y=1.02, fontsize=14, fontweight="bold")
+
+    # Adjust layout and save
+    plt.tight_layout()
+
+    # Handle output folder
+    if output_folder:
+        import os
+
+        os.makedirs(output_folder, exist_ok=True)
+        save_path = os.path.join(output_folder, fig_name)
+    else:
+        save_path = fig_name
+
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f'Parameter interaction plot saved as "{save_path}"')
 
 
 def plot_bestmodelrun(results, evaluation, fig_name="Best_model_run.png", output_folder=None):
-    if not output_folder:
-        output_folder = "./"
+    """Plot best model run with seaborn styling"""
+    # Set style for this plot
+    sns.set_style("darkgrid")
 
-    fig = plt.figure(figsize=(16, 9))
-    for i in range(len(evaluation)):
-        if evaluation[i] == -9999:
-            evaluation[i] = np.nan
-    plt.plot(evaluation, "ro", markersize=1, label="Observation data")
+    fig, ax = plt.subplots(figsize=(16, 9))
+
+    # Clean evaluation data
+    evaluation = np.array(evaluation, dtype=float)
+    evaluation[evaluation == -9999] = np.nan
+
+    # Plot observation data with seaborn styling
+    x_obs = range(len(evaluation))
+    sns.scatterplot(
+        x=x_obs, y=evaluation, color="crimson", s=20, alpha=0.7, label="Observation data", ax=ax
+    )
+
+    # Get best simulation
     simulation_fields = get_simulation_fields(results)
     bestindex, bestobjf = get_maxlikeindex(results, verbose=False)
-    plt.plot(
-        list(results[simulation_fields][bestindex][0]),
-        "b-",
-        label="Obj=" + str(round(bestobjf, 2)),
+    best_simulation = list(results[simulation_fields][bestindex][0])
+
+    # Plot best simulation with seaborn
+    x_sim = range(len(best_simulation))
+    sns.lineplot(
+        x=x_sim,
+        y=best_simulation,
+        color="royalblue",
+        linewidth=2,
+        label=f"Best simulation (Obj={bestobjf:.2f})",
+        ax=ax,
     )
-    plt.xlabel("Number of Observation Points")
-    plt.ylabel("Simulated value")
-    plt.legend(loc="upper right")
-    fig.savefig(output_folder + fig_name, dpi=300)
-    text = "A plot of the best model run has been saved as " + output_folder + fig_name
-    print(text)
+
+    # Customize plot
+    ax.set_xlabel("Number of Observation Points", fontsize=12)
+    ax.set_ylabel("Simulated Value", fontsize=12)
+    ax.set_title("Best Model Run", fontsize=14, fontweight="bold")
+
+    # Improve legend
+    ax.legend(loc="upper right", frameon=True, fancybox=True, shadow=True, fontsize=11)
+
+    # Add subtle styling
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    plt.tight_layout()
+
+    # Handle output folder
+    if output_folder:
+        import os
+
+        os.makedirs(output_folder, exist_ok=True)
+        save_path = os.path.join(output_folder, fig_name)
+    else:
+        save_path = fig_name
+
+    fig.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f"A plot of the best model run has been saved as {save_path}")
 
 
+# Optional: Add a new function for correlation heatmap
 def plot_parameter_correlation(results, fig_name="ParameterCorrelation.png", output_folder=None):
-    if not output_folder:
-        output_folder = "./"
     """Create a correlation heatmap of parameters using seaborn"""
     parameterdistribution = get_parameters(results)
     parameternames = get_parameternames(results)
 
+    # Create DataFrame
     df = pd.DataFrame(np.asarray(parameterdistribution).T.tolist(), columns=parameternames)
 
+    # Calculate correlation matrix
     corr_matrix = df.corr()
+
     # Create heatmap
     fig, ax = plt.subplots(figsize=(10, 8))
     sns.heatmap(
@@ -102,8 +195,18 @@ def plot_parameter_correlation(results, fig_name="ParameterCorrelation.png", out
     ax.set_title("Parameter Correlation Matrix", fontsize=14, fontweight="bold")
 
     plt.tight_layout()
-    plt.savefig(output_folder + fig_name, dpi=300, bbox_inches="tight")
-    print(f'Correlation heatmap saved as "{output_folder + fig_name}"')
+
+    # Handle output folder
+    if output_folder:
+        import os
+
+        os.makedirs(output_folder, exist_ok=True)
+        save_path = os.path.join(output_folder, fig_name)
+    else:
+        save_path = fig_name
+
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f'Correlation heatmap saved as "{save_path}"')
 
 
 def create_interactive_plots(
@@ -113,8 +216,8 @@ def create_interactive_plots(
     import os
 
     from bokeh.layouts import column, gridplot
-    from bokeh.models import ColumnDataSource, HoverTool, TabPanel, Tabs
-    from bokeh.palettes import Category10, Category20, RdYlBu11
+    from bokeh.models import ColumnDataSource, HoverTool, Panel, Tabs
+    from bokeh.palettes import Category10, RdYlBu11
     from bokeh.plotting import figure, output_file, save
     from bokeh.transform import linear_cmap
 
@@ -136,7 +239,7 @@ def create_interactive_plots(
 
     # 1. Parameter Traces Tab
     trace_plots = []
-    colors = Category10[10] if len(parameternames) <= 10 else Category20[20]
+    colors = Category10[10] if len(parameternames) <= 10 else Category10[20]
 
     for i, name in enumerate(parameternames):
         data = results["par" + name]
@@ -160,7 +263,7 @@ def create_interactive_plots(
 
         trace_plots.append(p)
 
-    trace_tab = TabPanel(child=column(*trace_plots), title="Parameter Traces")
+    trace_tab = Panel(child=column(*trace_plots), title="Parameter Traces")
     tabs.append(trace_tab)
 
     # 2. Parameter Interactions Tab
@@ -194,7 +297,7 @@ def create_interactive_plots(
                 source = ColumnDataSource(
                     data=dict(x=df[parameternames[j]], y=df[parameternames[i]])
                 )
-                p.circle("x", "y", radius=3, color="navy", alpha=0.5, source=source)
+                p.circle("x", "y", size=3, color="navy", alpha=0.5, source=source)
                 p.xaxis.axis_label = parameternames[j] if i == n_params - 1 else ""
                 p.yaxis.axis_label = parameternames[i] if j == 0 else ""
 
@@ -202,7 +305,7 @@ def create_interactive_plots(
         scatter_plots.append(row_plots)
 
     scatter_grid = gridplot(scatter_plots, toolbar_location="right")
-    interaction_tab = TabPanel(child=scatter_grid, title="Parameter Interactions")
+    interaction_tab = Panel(child=scatter_grid, title="Parameter Interactions")
     tabs.append(interaction_tab)
 
     # 3. Correlation Heatmap Tab
@@ -261,7 +364,7 @@ def create_interactive_plots(
     hover = p_heat.select_one(HoverTool)
     hover.tooltips = [("Parameters", "@x_names - @y_names"), ("Correlation", "@corr_values{0.00}")]
 
-    corr_tab = TabPanel(child=p_heat, title="Correlation Heatmap")
+    corr_tab = Panel(child=p_heat, title="Correlation Heatmap")
     tabs.append(corr_tab)
 
     # 4. Best Model Run Tab (if evaluation data provided)
@@ -288,13 +391,7 @@ def create_interactive_plots(
         x_obs = list(range(len(evaluation)))
         obs_source = ColumnDataSource(data=dict(x=x_obs, y=evaluation))
         p_best.circle(
-            "x",
-            "y",
-            radius=5,
-            color="red",
-            alpha=0.7,
-            legend_label="Observations",
-            source=obs_source,
+            "x", "y", size=5, color="red", alpha=0.7, legend_label="Observations", source=obs_source
         )
 
         # Plot best simulation
@@ -307,7 +404,7 @@ def create_interactive_plots(
         p_best.legend.location = "top_right"
         p_best.legend.click_policy = "hide"
 
-        best_tab = TabPanel(child=p_best, title="Best Model Run")
+        best_tab = Panel(child=p_best, title="Best Model Run")
         tabs.append(best_tab)
 
     # Create final layout with tabs

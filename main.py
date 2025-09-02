@@ -18,7 +18,7 @@ start_date = "2015-10-01"
 end_date = "2019-12-01"
 training_start_date = "2018-09-30"
 # data_root = "/home/jovyan/ngiab_preprocess_output"
-data_root = "/home/josh/work/ayman_cal/data"
+data_root = "/home/josh/code/JoshCu/ayman_cal/data"
 
 realization_path = f"{data_root}/gage-{gage_id}/config/realization.json"
 observed_flow_path = f"{data_root}/{gage_id}_observed_flow.pkl"
@@ -42,9 +42,9 @@ best_params = run_spotpy(
     data_dir,
     feature_id,
     algorithm="DDS",
-    objective_function="KGE",
+    objective_function="RMSE",
     repetitions=200,
-    dds_trials=4,
+    dds_trials=1,
     tensorboard_logdir=tensorboard_logdir,  # Add TensorBoard logging
 )
 

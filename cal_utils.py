@@ -2,14 +2,12 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import spotpy
-import spotpy.objectivefunctions as objf
 import xarray as xr
 from dataretrieval import nwis
 from spotpy.parameter import Uniform
@@ -36,6 +34,30 @@ def update_parameters(file_path, param_updates, model_type_name):
             break
     with open(file_path, "w") as f:
         json.dump(realization, f, indent=4)
+
+
+def update_snow_emis(value):
+    """
+    Update selected NOAH LSM parameters in the MPTABLE.TBL file.
+
+    Parameters:
+        directory_path (str): Path to the 'noah_om/parameters' directory.
+        param_updates (dict): Keys are parameter names (e.g., 'MFSNO'), values are strings to insert.
+    """
+    file_path = Path("data/gage-10109001/config/MPTABLE.TBL")
+    if not file_path.exists():
+        raise FileNotFoundError(f"MPTABLE.TBL not found at {file_path}")
+
+    with open(file_path, "r") as file:
+        lines = file.readlines()
+        print(f"Updating parameters in {file_path}...")
+
+        for i, line in enumerate(lines):
+            if line.strip().startswith("SNOW_EMIS"):
+                lines[i] = f"  SNOW_EMIS     = {value}\n"
+
+    with open(file_path, "w") as file:
+        file.writelines(lines)
 
 
 # === Utility Function to Retrieve and Preprocess USGS Streamflow ===
@@ -102,13 +124,14 @@ class NextGenSetup:
             "MP": params[9],
             "RSURF_EXP": params[10],
             # "SNOW_EMIS": params[11],
-            "CWP": params[11],
-            "VCMX25": params[12],
-            "RSURF_SNOW": params[13],
-            "SCAMAX": params[14],
+            "CWP": params[12],
+            "VCMX25": params[13],
+            "RSURF_SNOW": params[14],
+            "SCAMAX": params[15],
         }
 
         update_parameters(self.realization_path, noah_param_updates, "NoahOWP")
+        update_snow_emis(params[11])
 
     def run_model(self, data_dir):
         troute_output_folder = Path(data_dir) / "outputs" / "troute"
@@ -142,26 +165,34 @@ class SpotpySetup:
     soil_params_b = Uniform(2.0, 15.0)
     satpsi = Uniform(0.03, 0.955)
     satdk = Uniform(0.0000001, 0.000726)
-    maxsmc = Uniform(0.5, 0.8)
+    maxsmc = Uniform(0.16, 0.58)
     expon = Uniform(1.0, 8.0)
     slope = Uniform(0.0, 1.0)
     K_nash_subsurface = Uniform(0.01, 1.0)
     K_lf = Uniform(0.005, 1.0)
 
     # Additional NOAH OWP Modular parameters
-    MFSNO = Uniform(low=1.0, high=5.0)  # multiplier on snowfall melt factor
+    MFSNO = Uniform(0.5, 4.0)  # multiplier on snowfall melt factor
     MP = Uniform(3.6, 12.6)
-    RSURF_EXP = Uniform(4.5, 8.5)
-    # SNOW_EMIS = Uniform(low=0.90, high=1.0)  # snow emissivity
+    RSURF_EXP = Uniform(1.0, 6.0)
+    SNOW_EMIS = Uniform(0.90, 1.0)  # snow emissivity
     CWP = Uniform(0.09, 0.36)
     VCMX25 = Uniform(24.0, 112.0)
-    RSURF_SNOW = Uniform(0.001, 50.0)
+    RSURF_SNOW = Uniform(0.136, 100.0)
     SCAMAX = Uniform(0.7, 1.0)
 
     def __init__(
-        self, model_setup, data_dir, feature_id, invert_objective, objective_function, writer=None
+        self,
+        model_setup,
+        data_dir,
+        feature_id,
+        invert_objective,
+        objective_function,
+        writer=None,
+        objective_function_name=None,
     ):
         self.obj_func = objective_function
+        self.objective_function_name = objective_function_name
         self.invert_objective = invert_objective
         self.model = model_setup
         self.data_dir = data_dir
@@ -183,6 +214,7 @@ class SpotpySetup:
             "MFSNO",
             "MP",
             "RSURF_EXP",
+            "SNOW_EMIS",
             "CWP",
             "VCMX25",
             "RSURF_SNOW",
@@ -206,12 +238,7 @@ class SpotpySetup:
         if len(simulation) != len(evaluation):
             raise ValueError("simulation and observation are not equal length")
 
-        if not self.obj_func:
-            # This is used if not overwritten by user
-            like = objf.rmse(evaluation, simulation)
-        else:
-            # Way to ensure flexible spot setup class
-            like = self.obj_func(evaluation, simulation)
+        objective_metric = self.obj_func(evaluation, simulation)
 
         # Calculate additional metrics for TensorBoard
         mae = np.mean(np.abs(evaluation - simulation))
@@ -223,7 +250,7 @@ class SpotpySetup:
         # Log to TensorBoard if writer is available
         if self.writer:
             # Log objective function value
-            self.writer.add_scalar("Metrics/Objective_Function", like, self.run_id)
+            self.writer.add_scalar("Metrics/Objective_Function", objective_metric, self.run_id)
             self.writer.add_scalar("Metrics/MAE", mae, self.run_id)
             self.writer.add_scalar("Metrics/NSE", nse, self.run_id)
             self.writer.add_scalar("Metrics/Correlation", correlation, self.run_id)
@@ -241,7 +268,7 @@ class SpotpySetup:
                 ax.plot(evaluation, label="Observed", color="black", linewidth=1.5)
                 ax.plot(simulation, label="Simulated", linestyle="--", alpha=0.8)
                 ax.legend()
-                ax.set_title(f"Iteration {self.run_id} - Objective: {like:.3f}")
+                ax.set_title(f"Iteration {self.run_id} - Objective: {objective_metric:.3f}")
                 ax.set_xlabel("Time step")
                 ax.set_ylabel("Streamflow [m3/sec]")
                 ax.grid(True, alpha=0.3)
@@ -269,12 +296,12 @@ class SpotpySetup:
 
             # Track best model
             is_better = (
-                (like < self.best_objective)
+                (objective_metric < self.best_objective)
                 if not self.invert_objective
-                else (like > self.best_objective)
+                else (objective_metric > self.best_objective)
             )
             if is_better:
-                self.best_objective = like
+                self.best_objective = objective_metric
                 self.writer.add_scalar("Metrics/Best_Objective", self.best_objective, self.run_id)
 
                 # Log best parameters
@@ -285,26 +312,28 @@ class SpotpySetup:
                         )
 
         # Plot each calibration iteration (existing functionality)
-        plt.figure(figsize=(10, 4))
-        plt.plot(evaluation, label="Observed", color="black")
-        plt.plot(simulation, label="Simulated", linestyle="--")
-        plt.text(
-            0.5, 0.9, f"objective_function: {like:.2f}", transform=plt.gca().transAxes, fontsize=12
-        )
-        plt.legend()
-        plt.title(f"CFE-NOM-TR Streamflow for Gage {self.model.gage_id} - Run {self.run_id}")
-        plt.xlabel("Time step")
-        plt.ylabel("Streamflow [m3/sec]")
-        plt.savefig(
-            f"{self.output_dir}/plots/iterations/spotpy_run_{str(self.run_id).zfill(4)}.png"
-        )
-        plt.close()
-
+        # plt.figure(figsize=(10, 4))
+        # plt.plot(evaluation, label="Observed", color="black")
+        # plt.plot(simulation, label="Simulated", linestyle="--")
+        # plt.text(
+        #     0.5, 0.9, f"objective_function: {like:.2f}", transform=plt.gca().transAxes, fontsize=12
+        # )
+        # plt.legend()
+        # plt.title(f"CFE-NOM-TR Streamflow for Gage {self.model.gage_id} - Run {self.run_id}")
+        # plt.xlabel("Time step")
+        # plt.ylabel("Streamflow [m3/sec]")
+        # plt.savefig(
+        #     f"{self.output_dir}/plots/iterations/spotpy_run_{str(self.run_id).zfill(4)}.png"
+        # )
+        # plt.close()
+        # TODO fix for kge with sce should be 1-kge
         self.run_id += 1
         if self.invert_objective:
-            return -like
+            if self.objective_function_name == "kge":
+                return 1 - objective_metric
+            return -objective_metric
         else:
-            return like
+            return objective_metric
 
 
 def plot_results(results, observation_data, output_dir):
@@ -354,14 +383,20 @@ def run_spotpy(
     elif algorithm == "SCE":
         algorithm_maximizes = False
 
-    invert_objective = best_is_higher != algorithm_maximizes
+    if best_is_higher and not algorithm_maximizes:
+        invert_objective = True
+    elif best_is_higher and algorithm_maximizes:
+        invert_objective = False
+    elif not best_is_higher and algorithm_maximizes:
+        invert_objective = True
+    elif not best_is_higher and not algorithm_maximizes:
+        invert_objective = False
 
     # Set up TensorBoard writer
     if tensorboard_logdir is None:
         tensorboard_logdir = f"{data_dir}/tensorboard_logs"
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = f"{algorithm}_{objective_function}_{gage_id}_{timestamp}"
+    run_name = f"{algorithm}_{objective_function}_{gage_id}"
     writer = SummaryWriter(log_dir=f"{tensorboard_logdir}/{run_name}")
 
     # Log hyperparameters
@@ -376,17 +411,18 @@ def run_spotpy(
     if algorithm == "DDS":
         hparams["dds_trials"] = dds_trials
 
-    writer.add_hparams(hparams, {"dummy": 0})  # TensorBoard requires at least one metric
+    # writer.add_hparams(hparams, {"dummy": 0})  # TensorBoard requires at least one metric
 
-    optimizer = SpotpySetup(model_setup, data_dir, feature_id, invert_objective, obj_func, writer)
-    db_name = f"{optimizer.output_dir}/spotpy_results_{algorithm}"
+    optimizer = SpotpySetup(
+        model_setup, data_dir, feature_id, invert_objective, obj_func, writer, objective_function
+    )
+    db_name = f"{optimizer.output_dir}/spotpy_results_{algorithm}_{objective_function}"
 
     # SCE hyperparameters
     if algorithm == "SCE":
         sampler = spotpy.algorithms.sceua(optimizer, dbname=db_name, dbformat="csv")
         sampler.sample(repetitions, ngs=20)
 
-    ## ADD hyperparameters
     elif algorithm == "DDS":
         sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv")
         sampler.sample(repetitions, trials=int(dds_trials))
@@ -395,31 +431,16 @@ def run_spotpy(
 
     # Final results to TensorBoard
     best_params = spotpy.analyser.get_best_parameterset(results, maximize=best_is_higher)
-
     # Log final best parameters
     for i, param_name in enumerate(optimizer.param_names):
         if i < len(best_params[0]):
             writer.add_scalar(f"FinalBestParameters/{param_name}", best_params[0][i], 0)
 
-    # Create parameter distribution plots
-    fig, axes = plt.subplots(3, 5, figsize=(15, 9))
-    axes = axes.flatten()
-    for i, param_name in enumerate(optimizer.param_names):
-        if i < len(axes) and i < len(best_params[0]):
-            param_values = results[param_name]
-            axes[i].hist(param_values, bins=30, edgecolor="black", alpha=0.7)
-            axes[i].axvline(best_params[0][i], color="red", linestyle="--", label="Best")
-            axes[i].set_title(param_name)
-            axes[i].legend()
-    plt.tight_layout()
-    writer.add_figure("ParameterDistributions/Final", fig, 0)
-    plt.close(fig)
-
     # Close TensorBoard writer
     writer.close()
 
     # Generate standard plots
-    plot_results(results, optimizer.evaluation(), f"{data_dir}/spotpy/plots")
+    # plot_results(results, optimizer.evaluation(), f"{data_dir}/spotpy/plots")
 
     print(f"\nTensorBoard logs saved to: {tensorboard_logdir}/{run_name}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results")
