@@ -164,8 +164,8 @@ class SpotpySetup:
     # CFE model parameters
     soil_params_b = Uniform(2.0, 15.0)
     satpsi = Uniform(0.03, 0.955)
-    satdk = Uniform(0.0000001, 0.000726)
-    maxsmc = Uniform(0.16, 0.58)
+    satdk = Uniform(0.0000001, 0.000726)  # hit min
+    maxsmc = Uniform(0.16, 0.58)  # hit max
     expon = Uniform(1.0, 8.0)
     slope = Uniform(0.0, 1.0)
     K_nash_subsurface = Uniform(0.01, 1.0)
@@ -173,12 +173,12 @@ class SpotpySetup:
 
     # Additional NOAH OWP Modular parameters
     MFSNO = Uniform(0.5, 4.0)  # multiplier on snowfall melt factor
-    MP = Uniform(3.6, 12.6)
-    RSURF_EXP = Uniform(1.0, 6.0)
+    MP = Uniform(3.6, 12.6)  # hit max
+    RSURF_EXP = Uniform(1.0, 6.0)  # hit max
     SNOW_EMIS = Uniform(0.90, 1.0)  # snow emissivity
     CWP = Uniform(0.09, 0.36)
     VCMX25 = Uniform(24.0, 112.0)
-    RSURF_SNOW = Uniform(0.136, 100.0)
+    RSURF_SNOW = Uniform(0.136, 100.0)  # hit min
     SCAMAX = Uniform(0.7, 1.0)
 
     def __init__(
@@ -241,6 +241,7 @@ class SpotpySetup:
         objective_metric = self.obj_func(evaluation, simulation)
 
         # Calculate additional metrics for TensorBoard
+        kge = spotpy.objectivefunctions.kge(evaluation, simulation)
         mae = np.mean(np.abs(evaluation - simulation))
         nse = 1 - (
             np.sum((evaluation - simulation) ** 2) / np.sum((evaluation - np.mean(evaluation)) ** 2)
@@ -252,6 +253,7 @@ class SpotpySetup:
             # Log objective function value
             self.writer.add_scalar("Metrics/Objective_Function", objective_metric, self.run_id)
             self.writer.add_scalar("Metrics/MAE", mae, self.run_id)
+            self.writer.add_scalar("Metrics/KGE", kge, self.run_id)
             self.writer.add_scalar("Metrics/NSE", nse, self.run_id)
             self.writer.add_scalar("Metrics/Correlation", correlation, self.run_id)
 
@@ -329,10 +331,12 @@ class SpotpySetup:
         # TODO fix for kge with sce should be 1-kge
         self.run_id += 1
         if self.invert_objective:
-            if self.objective_function_name == "kge":
+            if self.objective_function_name == "KGE":
                 return 1 - objective_metric
             return -objective_metric
         else:
+            if self.objective_function_name == "KGE":
+                return objective_metric - 1
             return objective_metric
 
 
@@ -396,7 +400,7 @@ def run_spotpy(
     if tensorboard_logdir is None:
         tensorboard_logdir = f"{data_dir}/tensorboard_logs"
 
-    run_name = f"{algorithm}_{objective_function}_{gage_id}"
+    run_name = f"{algorithm}_{objective_function}_{gage_id}_1"
     writer = SummaryWriter(log_dir=f"{tensorboard_logdir}/{run_name}")
 
     # Log hyperparameters

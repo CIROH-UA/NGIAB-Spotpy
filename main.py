@@ -42,7 +42,7 @@ best_params = run_spotpy(
     data_dir,
     feature_id,
     algorithm="DDS",
-    objective_function="RMSE",
+    objective_function="KGE",
     repetitions=200,
     dds_trials=1,
     tensorboard_logdir=tensorboard_logdir,  # Add TensorBoard logging
