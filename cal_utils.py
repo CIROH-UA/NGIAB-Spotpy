@@ -50,7 +50,7 @@ def update_snow_emis(value):
 
     with open(file_path, "r") as file:
         lines = file.readlines()
-        print(f"Updating parameters in {file_path}...")
+        # print(f"Updating parameters in {file_path}...")
 
         for i, line in enumerate(lines):
             if line.strip().startswith("SNOW_EMIS"):
@@ -137,11 +137,11 @@ class NextGenSetup:
         troute_output_folder = Path(data_dir) / "outputs" / "troute"
         for file in troute_output_folder.glob("*.nc"):
             file.unlink()
-            print("T-route has been removed from previous run")
+            # print("T-route has been removed from previous run")
         try:
             # model = PyNGIAB(data_dir, serial_execution_mode=True)
             # model.run()
-            command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast_cal /ngen/ngen/data/ auto 100 local'
+            command = f'docker run -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast_cal /ngen/ngen/data/ auto 100 local'
             # command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast /ngen/ngen/data/ auto 100 local'
             subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
             print("Next Gen run complete.")
@@ -154,7 +154,8 @@ class NextGenSetup:
     def evaluate(self, feature_id):
         ds = xr.open_dataset(self.troute_output_path)
         simulated = ds["flow"].sel(feature_id=feature_id).values
-        simulated = simulated[ds["time"] >= self.training_start_date]
+        actual_start = min(self.training_start_date, self.observed.index[0])
+        simulated = simulated[ds["time"] >= actual_start]
         simulated = simulated[: len(self.observed) - 1]
         return simulated
 
@@ -165,7 +166,7 @@ class SpotpySetup:
     soil_params_b = Uniform(2.0, 15.0)
     satpsi = Uniform(0.03, 0.955)
     satdk = Uniform(0.0000001, 0.000726)  # hit min
-    maxsmc = Uniform(0.16, 0.58)  # hit max
+    maxsmc = Uniform(0.16, 1.0)  # hit max set to 0.8
     expon = Uniform(1.0, 8.0)
     slope = Uniform(0.0, 1.0)
     K_nash_subsurface = Uniform(0.01, 1.0)
@@ -173,12 +174,12 @@ class SpotpySetup:
 
     # Additional NOAH OWP Modular parameters
     MFSNO = Uniform(0.5, 4.0)  # multiplier on snowfall melt factor
-    MP = Uniform(3.6, 12.6)  # hit max
-    RSURF_EXP = Uniform(1.0, 6.0)  # hit max
+    MP = Uniform(3.6, 14.6)  # hit max
+    RSURF_EXP = Uniform(1.0, 15.0)  # hit max
     SNOW_EMIS = Uniform(0.90, 1.0)  # snow emissivity
     CWP = Uniform(0.09, 0.36)
-    VCMX25 = Uniform(24.0, 112.0)
-    RSURF_SNOW = Uniform(0.136, 100.0)  # hit min
+    VCMX25 = Uniform(24.0, 152.0)
+    RSURF_SNOW = Uniform(0.0, 100.0)  # hit min
     SCAMAX = Uniform(0.7, 1.0)
 
     def __init__(
@@ -239,8 +240,17 @@ class SpotpySetup:
             raise ValueError("simulation and observation are not equal length")
 
         objective_metric = self.obj_func(evaluation, simulation)
+        if self.invert_objective:
+            if self.objective_function_name == "KGE":
+                objective_metric = 1 - objective_metric
+            else:
+                objective_metric = -objective_metric
+        else:
+            if self.objective_function_name == "KGE":
+                objective_metric = objective_metric - 1
 
         # Calculate additional metrics for TensorBoard
+        rmse = spotpy.objectivefunctions.rmse(evaluation, simulation)
         kge = spotpy.objectivefunctions.kge(evaluation, simulation)
         mae = np.mean(np.abs(evaluation - simulation))
         nse = 1 - (
@@ -255,6 +265,7 @@ class SpotpySetup:
             self.writer.add_scalar("Metrics/MAE", mae, self.run_id)
             self.writer.add_scalar("Metrics/KGE", kge, self.run_id)
             self.writer.add_scalar("Metrics/NSE", nse, self.run_id)
+            self.writer.add_scalar("Metrics/RMSE", rmse, self.run_id)
             self.writer.add_scalar("Metrics/Correlation", correlation, self.run_id)
 
             # Log parameters
@@ -265,7 +276,7 @@ class SpotpySetup:
                     )
 
             # Log hydrographs periodically (every 10 iterations)
-            if self.run_id % 1 == 0:
+            if self.run_id % 10 == 0:
                 fig, ax = plt.subplots(figsize=(12, 6))
                 ax.plot(evaluation, label="Observed", color="black", linewidth=1.5)
                 ax.plot(simulation, label="Simulated", linestyle="--", alpha=0.8)
@@ -296,48 +307,8 @@ class SpotpySetup:
                 self.writer.add_figure("Residuals/Analysis", fig, self.run_id)
                 plt.close(fig)
 
-            # Track best model
-            is_better = (
-                (objective_metric < self.best_objective)
-                if not self.invert_objective
-                else (objective_metric > self.best_objective)
-            )
-            if is_better:
-                self.best_objective = objective_metric
-                self.writer.add_scalar("Metrics/Best_Objective", self.best_objective, self.run_id)
-
-                # Log best parameters
-                for i, param_name in enumerate(self.param_names):
-                    if i < len(self.current_params):
-                        self.writer.add_scalar(
-                            f"BestParameters/{param_name}", self.current_params[i], self.run_id
-                        )
-
-        # Plot each calibration iteration (existing functionality)
-        # plt.figure(figsize=(10, 4))
-        # plt.plot(evaluation, label="Observed", color="black")
-        # plt.plot(simulation, label="Simulated", linestyle="--")
-        # plt.text(
-        #     0.5, 0.9, f"objective_function: {like:.2f}", transform=plt.gca().transAxes, fontsize=12
-        # )
-        # plt.legend()
-        # plt.title(f"CFE-NOM-TR Streamflow for Gage {self.model.gage_id} - Run {self.run_id}")
-        # plt.xlabel("Time step")
-        # plt.ylabel("Streamflow [m3/sec]")
-        # plt.savefig(
-        #     f"{self.output_dir}/plots/iterations/spotpy_run_{str(self.run_id).zfill(4)}.png"
-        # )
-        # plt.close()
-        # TODO fix for kge with sce should be 1-kge
         self.run_id += 1
-        if self.invert_objective:
-            if self.objective_function_name == "KGE":
-                return 1 - objective_metric
-            return -objective_metric
-        else:
-            if self.objective_function_name == "KGE":
-                return objective_metric - 1
-            return objective_metric
+        return objective_metric
 
 
 def plot_results(results, observation_data, output_dir):
@@ -387,20 +358,22 @@ def run_spotpy(
     elif algorithm == "SCE":
         algorithm_maximizes = False
 
-    if best_is_higher and not algorithm_maximizes:
-        invert_objective = True
-    elif best_is_higher and algorithm_maximizes:
-        invert_objective = False
-    elif not best_is_higher and algorithm_maximizes:
-        invert_objective = True
-    elif not best_is_higher and not algorithm_maximizes:
-        invert_objective = False
+    invert_objective = best_is_higher != algorithm_maximizes
+
+    # if best_is_higher and not algorithm_maximizes:
+    #     invert_objective = True
+    # elif best_is_higher and algorithm_maximizes:
+    #     invert_objective = False
+    # elif not best_is_higher and algorithm_maximizes:
+    #     invert_objective = True
+    # elif not best_is_higher and not algorithm_maximizes:
+    #     invert_objective = False
 
     # Set up TensorBoard writer
     if tensorboard_logdir is None:
         tensorboard_logdir = f"{data_dir}/tensorboard_logs"
 
-    run_name = f"{algorithm}_{objective_function}_{gage_id}_1"
+    run_name = f"{algorithm}_{objective_function}_{gage_id}_2017_10_02"
     writer = SummaryWriter(log_dir=f"{tensorboard_logdir}/{run_name}")
 
     # Log hyperparameters

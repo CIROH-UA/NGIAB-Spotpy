@@ -16,7 +16,7 @@ gage_id = "10109001"
 feature_id = 2861391
 start_date = "2015-10-01"
 end_date = "2019-12-01"
-training_start_date = "2018-09-30"
+training_start_date = "2017-10-02"  # obs start 2017-10-01:7am
 # data_root = "/home/jovyan/ngiab_preprocess_output"
 data_root = "/home/josh/code/JoshCu/ayman_cal/data"
 
@@ -41,10 +41,10 @@ best_params = run_spotpy(
     troute_output_path,
     data_dir,
     feature_id,
-    algorithm="DDS",
+    algorithm="SCE",
     objective_function="KGE",
-    repetitions=200,
-    dds_trials=1,
+    repetitions=100,
+    dds_trials=5,
     tensorboard_logdir=tensorboard_logdir,  # Add TensorBoard logging
 )
 
