@@ -208,12 +208,6 @@ class NextGenSetup:
         else:
             print("Nextgen run complete.")
             #remove realization file
-            comm = MPI.COMM_WORLD
-            rank = comm.Get_rank()
-            hostname = socket.gethostname()
-            pid = os.getpid()
-            print(f"[Rank {rank}] Process on {hostname} with pid {pid} completed Nextgen run.")
-            print(f"Now removing {realization} and {troute_yaml} and {temp_ngen_output_dir}.")
             shutil.rmtree(temp_ngen_output_dir)
             os.remove(realization)
             os.remove(troute_yaml)  
@@ -296,17 +290,6 @@ class SpotpySetup:
 
     def simulation(self, vector):
         self.current_params = vector
-        # Get process information
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        hostname = socket.gethostname()
-        pid = os.getpid()
-
-        if rank == 0:
-            print("Rank 0 is inside the simulation function.")
-            print("Rank 0 is inside the simulation function.")
-            print("Rank 0 is inside the simulation function.")
-            print("Rank 0 is inside the simulation function.")
         #cerate a temporary copy of realization file and yaml file for each process
         realization_path = Path(self.data_dir)/ "config" / "realization.json"
         with open(realization_path, 'r') as f:
@@ -331,25 +314,25 @@ class SpotpySetup:
         print(f"Temporary Nextgen output directory: {temp_ngen_output_dir}")
         print(f"Temporary T-route output directory: {temp_troute_output_dir}")
 
-        tracking_file = os.path.join(f"process_rank_{rank}_pid_{pid}.txt")
-        with open(tracking_file, 'w') as f:
-            f.write(f"Process Information\n")
-            f.write(f"==================\n")
-            f.write(f"MPI Rank: {rank}\n")
-            f.write(f"Process ID: {pid}\n")
-            f.write(f"Hostname: {hostname}\n")
-            f.write(f"Process Name: prterun-{hostname}-{pid}@1,{rank}\n")
-            f.write(f"\nTemporary Files\n")
-            f.write(f"===============\n")
-            f.write(f"Realization Config: {temp_file_realization_name}\n")
-            f.write(f"Troute YAML Config: {temp_file_yaml_name}\n")
-            f.write(f"\nOutput Directories\n")
-            f.write(f"==================\n")
-            f.write(f"Nextgen Output: {temp_ngen_output_dir}\n")
-            f.write(f"T-route Output: {temp_troute_output_dir}\n")
-            f.write(f"\nTimestamp: {pd.Timestamp.now()}\n")
+        # tracking_file = os.path.join(f"process_rank_{rank}_pid_{pid}.txt")
+        # with open(tracking_file, 'w') as f:
+        #     f.write(f"Process Information\n")
+        #     f.write(f"==================\n")
+        #     f.write(f"MPI Rank: {rank}\n")
+        #     f.write(f"Process ID: {pid}\n")
+        #     f.write(f"Hostname: {hostname}\n")
+        #     f.write(f"Process Name: prterun-{hostname}-{pid}@1,{rank}\n")
+        #     f.write(f"\nTemporary Files\n")
+        #     f.write(f"===============\n")
+        #     f.write(f"Realization Config: {temp_file_realization_name}\n")
+        #     f.write(f"Troute YAML Config: {temp_file_yaml_name}\n")
+        #     f.write(f"\nOutput Directories\n")
+        #     f.write(f"==================\n")
+        #     f.write(f"Nextgen Output: {temp_ngen_output_dir}\n")
+        #     f.write(f"T-route Output: {temp_troute_output_dir}\n")
+        #     f.write(f"\nTimestamp: {pd.Timestamp.now()}\n")
         
-        print(f"[Rank {rank}] Process tracking file created: {tracking_file}")
+        # print(f"[Rank {rank}] Process tracking file created: {tracking_file}")
 
         update_output_path(temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir)
 
@@ -385,15 +368,6 @@ class SpotpySetup:
         correlation = np.corrcoef(evaluation, simulation)[0, 1]
 
 
-        #check which process is running this
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        print(f"Process {rank} is in the objective function.")
-        print(f"Process {rank} is in the objective function.")
-        print(f"Process {rank} is in the objective function.")
-        print(f"Process {rank} is in the objective function.")
-
-
 
         # Log to TensorBoard if writer is available
         if self.writer:
@@ -405,19 +379,16 @@ class SpotpySetup:
             self.writer.add_scalar("Metrics/RMSE", rmse, self.run_id)
             self.writer.add_scalar("Metrics/Correlation", correlation, self.run_id)
 
-            comm = MPI.COMM_WORLD
-            rank = comm.Get_rank()
 
-            if rank != 0:
             # Log parameters
-                for i, param_name in enumerate(self.param_names):
-                    if i < len(self.current_params):
-                        self.writer.add_scalar(
-                            f"Parameters/{param_name}", self.current_params[i], self.run_id
-                        )
+            for i, param_name in enumerate(self.param_names):
+                if i < len(self.current_params):
+                    self.writer.add_scalar(
+                        f"Parameters/{param_name}", self.current_params[i], self.run_id
+                    )
 
             # Log hydrographs periodically (every 10 iterations)
-            if self.run_id % 10 == 0:
+            if self.run_id % 2 == 0:
                 fig, ax = plt.subplots(figsize=(12, 6))
                 ax.plot(evaluation, label="Observed", color="black", linewidth=1.5)
                 ax.plot(simulation, label="Simulated", linestyle="--", alpha=0.8)
@@ -530,18 +501,6 @@ def run_spotpy(
         hparams["dds_trials"] = dds_trials
 
     # writer.add_hparams(hparams, {"dummy": 0})  # TensorBoard requires at least one metric
-
-    #checking which process is running this
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-
-    print("Creating SpotpySetup optimizer...")
-    print("Creating SpotpySetup optimizer...")
-    print("Creating SpotpySetup optimizer...")
-    print("Creating SpotpySetup optimizer...")
-    print(f"{rank} process is creating the SpotpySetup optimizer.")
-
-
     optimizer = SpotpySetup(
         model_setup, data_dir, feature_id, invert_objective, obj_func, writer, objective_function
     )
@@ -564,6 +523,34 @@ def run_spotpy(
     print("***************************************")
     print("***************************************")
     print(f"*******BEST PARAMETERS**********: {best_params}")
+
+
+    best_params_value = best_params[0]
+    realization_path = Path(data_dir)/ "config" / "realization.json"
+
+    param_map = {
+        "b": best_params_value[0],
+        "satpsi": best_params_value[1],
+        "satdk": best_params_value[2],
+        "maxsmc": best_params_value[3],
+        "expon": best_params_value[4],
+        "slope": best_params_value[5],
+        "Kn": best_params_value[6],
+        "Klf": best_params_value[7],
+        }
+    update_parameters(realization_path, param_map, "CFE")
+    # Create updated NOAH parameters dictionary
+    noah_param_updates = {
+        "MFSNO": best_params_value[8],  # Pass float directly
+        "MP": best_params_value[9],
+        "RSURF_EXP": best_params_value[10],
+        # "SNOW_EMIS": best_params_value[11],
+        "CWP": best_params_value[12],
+        "VCMX25": best_params_value[13],
+        "RSURF_SNOW": best_params_value[14],
+        "SCAMAX": best_params_value[15],
+        }
+    update_parameters(realization_path, noah_param_updates, "NoahOWP")
 
     # Log final best parameters
     for i, param_name in enumerate(optimizer.param_names):
