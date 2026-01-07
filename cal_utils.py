@@ -12,6 +12,11 @@ import xarray as xr
 from dataretrieval import nwis
 from spotpy.parameter import Uniform
 from tensorboardX import SummaryWriter
+import tempfile
+import yaml
+import shutil
+from mpi4py import MPI
+import socket
 
 from plots import (
     create_interactive_plots,
@@ -22,6 +27,24 @@ from plots import (
 )
 
 sys.path.append("/ngen/pyngiab")
+
+def update_output_path(realization_path_name, troute_config_file_name, temp_ngen_output_dir, temp_troute_output_dir):
+
+    #updating troute and ngen output path in realization
+    with open(realization_path_name, 'r') as f:
+        data = json.load(f)
+    data['output_root'] = os.path.join("outputs/ngen",os.path.basename(temp_ngen_output_dir))
+    data['routing']['t_route_config_file_with_path'] = os.path.join("config",os.path.basename(troute_config_file_name))
+    with open(realization_path_name, 'w') as f:
+        json.dump(data, f, indent=4)
+
+    #updating lateral input path (that comes from temp_ngen_output_dir) and stream output path in troute yaml file
+    with open(troute_config_file_name, 'r') as f:
+        data = yaml.safe_load(f)
+    data['output_parameters']['stream_output']['stream_output_directory'] = os.path.join("outputs/troute",os.path.basename(temp_troute_output_dir))
+    data['compute_parameters']['forcing_parameters']['qlat_input_folder'] = os.path.join("outputs/ngen",os.path.basename(temp_ngen_output_dir))
+    with open(troute_config_file_name, 'w') as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False, width=100)
 
 
 def update_parameters(file_path, param_updates, model_type_name):
@@ -36,7 +59,7 @@ def update_parameters(file_path, param_updates, model_type_name):
         json.dump(realization, f, indent=4)
 
 
-def update_snow_emis(value):
+def update_snow_emis(data_dir, value):
     """
     Update selected NOAH LSM parameters in the MPTABLE.TBL file.
 
@@ -44,9 +67,10 @@ def update_snow_emis(value):
         directory_path (str): Path to the 'noah_om/parameters' directory.
         param_updates (dict): Keys are parameter names (e.g., 'MFSNO'), values are strings to insert.
     """
-    file_path = Path("data/gage-10109001/config/MPTABLE.TBL")
+    file_path = Path(os.path.join(data_dir, "config/MPTABLE.TBL"))
     if not file_path.exists():
-        raise FileNotFoundError(f"MPTABLE.TBL not found at {file_path}")
+        os.system(f"touch {str(file_path)}")
+        # raise FileNotFoundError(f"MPTABLE.TBL not found at {file_path}")
 
     with open(file_path, "r") as file:
         lines = file.readlines()
@@ -103,8 +127,11 @@ class NextGenSetup:
         self.observed = self.observed.set_index("Time")
         self.troute_output_path = troute_output_path
         self.realization_path = Path(data_dir) / "config" / "realization.json"
+        self.data_dir = data_dir
 
-    def write_config(self, params):
+    def write_config(self, realization_path_name, params):
+        realization_path = Path(self.data_dir)/ "config" / realization_path_name
+
         param_map = {
             "b": params[0],
             "satpsi": params[1],
@@ -116,7 +143,7 @@ class NextGenSetup:
             "Klf": params[7],
         }
 
-        update_parameters(self.realization_path, param_map, "CFE")
+        update_parameters(realization_path, param_map, "CFE")
 
         # Create updated NOAH parameters dictionary
         noah_param_updates = {
@@ -130,33 +157,74 @@ class NextGenSetup:
             "SCAMAX": params[15],
         }
 
-        update_parameters(self.realization_path, noah_param_updates, "NoahOWP")
-        update_snow_emis(params[11])
+        update_parameters(realization_path, noah_param_updates, "NoahOWP")
+        # update_snow_emis(self.data_dir, params[11])
 
-    def run_model(self, data_dir):
-        troute_output_folder = Path(data_dir) / "outputs" / "troute"
-        for file in troute_output_folder.glob("*.nc"):
-            file.unlink()
-            # print("T-route has been removed from previous run")
+
+    def run_model(self, gage_id, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir):
+        # troute_output_folder = Path(data_dir) / "outputs" / "troute"
+        # ngen_output_folder = Path(data_dir) / "outputs" / "ngen"
+
+        # for file in Path(temp_troute_output_dir).glob("*.nc"):
+        #     file.unlink()
+        #     # print("T-route has been removed from previous run")
+        # for file in Path(temp_ngen_output_dir).glob("*.csv"):
+        #     file.unlink()
+
+        gpkg_path = "/ngen/ngen/data/config/" + f"gage-{str(gage_id)}_subset.gpkg"
+        cmd_base = f"docker run --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
+        ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
+        # troute_cmd = f"docker run -it --entrypoint python -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image -m nwm_routing -f ./config/{troute_yaml}"
+
+
         try:
             # model = PyNGIAB(data_dir, serial_execution_mode=True)
             # model.run()
-            command = f'docker run -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast_cal /ngen/ngen/data/ auto 100 local'
-            # command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast /ngen/ngen/data/ auto 100 local'
-            subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
-            print("Next Gen run complete.")
+
+            subprocess.call(cmd_base + ngen_cmd, shell=True)
+
+            # command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast_cal /ngen/ngen/data/ auto 100 local'
+            # # command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast /ngen/ngen/data/ auto 100 local'
+            # subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
+
+            # subprocess.run(troute_cmd)
+            # print("Routing complete.")
+
+            # command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" --entrypoint /ngen/HelloNGEN.sh slama:0.1 /ngen/ngen/data/'
+            # subprocess.call(command, shell=True)
+            # print("Next Gen run complete.")
+
+
+
             # route_command = f"route_rs {data_dir}"
             # subprocess.run(route_command, shell=True, stdout=subprocess.DEVNULL)
             # print("routing complete.")
         except:
-            print("Next Gen run failed.")
+            raise RuntimeError("Next Gen run failed.")
 
-    def evaluate(self, feature_id):
+        self.troute_output_path = os.path.join(temp_troute_output_dir, os.path.basename(self.troute_output_path))
+        if not os.path.exists(self.troute_output_path):
+            raise RuntimeError("Nextgen Run failed. Couldn't find troute file.")
+        else:
+            print("Nextgen run complete.")
+            #remove realization file
+            comm = MPI.COMM_WORLD
+            rank = comm.Get_rank()
+            hostname = socket.gethostname()
+            pid = os.getpid()
+            print(f"[Rank {rank}] Process on {hostname} with pid {pid} completed Nextgen run.")
+            print(f"Now removing {realization} and {troute_yaml} and {temp_ngen_output_dir}.")
+            shutil.rmtree(temp_ngen_output_dir)
+            os.remove(realization)
+            os.remove(troute_yaml)  
+
+    def evaluate(self, temp_troute_output_dir, feature_id):
         ds = xr.open_dataset(self.troute_output_path)
         simulated = ds["flow"].sel(feature_id=feature_id).values
         actual_start = min(self.training_start_date, self.observed.index[0])
         simulated = simulated[ds["time"] >= actual_start]
         simulated = simulated[: len(self.observed) - 1]
+        shutil.rmtree(temp_troute_output_dir)
         return simulated
 
 
@@ -228,9 +296,67 @@ class SpotpySetup:
 
     def simulation(self, vector):
         self.current_params = vector
-        self.model.write_config(vector)
-        self.model.run_model(self.data_dir)
-        return self.model.evaluate(self.feature_id)
+        # Get process information
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        hostname = socket.gethostname()
+        pid = os.getpid()
+
+        if rank == 0:
+            print("Rank 0 is inside the simulation function.")
+            print("Rank 0 is inside the simulation function.")
+            print("Rank 0 is inside the simulation function.")
+            print("Rank 0 is inside the simulation function.")
+        #cerate a temporary copy of realization file and yaml file for each process
+        realization_path = Path(self.data_dir)/ "config" / "realization.json"
+        with open(realization_path, 'r') as f:
+            data = json.load(f)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, dir = os.path.join(self.data_dir, "config")) as temp_file_realization:
+            json.dump(data, temp_file_realization, indent=4, ensure_ascii=False)
+            temp_file_realization_name = temp_file_realization.name
+            print(f"Temporary file created: {temp_file_realization_name}")
+
+        troute_config_path = Path(self.data_dir) / "config" / "troute.yaml"
+        with open(troute_config_path, 'r') as f:
+            data = yaml.safe_load(f)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, dir = os.path.join(self.data_dir, "config")) as temp_file_yaml:
+            yaml.dump(data, temp_file_yaml)
+            temp_file_yaml_name = temp_file_yaml.name
+            print(f"Temporary YAML file created: {temp_file_yaml_name}")
+
+        #create temporary output directories for ngen and troute for each process
+        temp_ngen_output_dir = tempfile.mkdtemp(dir = os.path.join(self.data_dir, "outputs/ngen"))
+        temp_troute_output_dir = tempfile.mkdtemp(dir = os.path.join(self.data_dir, "outputs/troute"))
+
+        print(f"Temporary Nextgen output directory: {temp_ngen_output_dir}")
+        print(f"Temporary T-route output directory: {temp_troute_output_dir}")
+
+        tracking_file = os.path.join(f"process_rank_{rank}_pid_{pid}.txt")
+        with open(tracking_file, 'w') as f:
+            f.write(f"Process Information\n")
+            f.write(f"==================\n")
+            f.write(f"MPI Rank: {rank}\n")
+            f.write(f"Process ID: {pid}\n")
+            f.write(f"Hostname: {hostname}\n")
+            f.write(f"Process Name: prterun-{hostname}-{pid}@1,{rank}\n")
+            f.write(f"\nTemporary Files\n")
+            f.write(f"===============\n")
+            f.write(f"Realization Config: {temp_file_realization_name}\n")
+            f.write(f"Troute YAML Config: {temp_file_yaml_name}\n")
+            f.write(f"\nOutput Directories\n")
+            f.write(f"==================\n")
+            f.write(f"Nextgen Output: {temp_ngen_output_dir}\n")
+            f.write(f"T-route Output: {temp_troute_output_dir}\n")
+            f.write(f"\nTimestamp: {pd.Timestamp.now()}\n")
+        
+        print(f"[Rank {rank}] Process tracking file created: {tracking_file}")
+
+        update_output_path(temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir)
+
+
+        self.model.write_config(temp_file_realization_name, vector)
+        self.model.run_model(self.model.gage_id, temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir)
+        return self.model.evaluate(temp_troute_output_dir,self.feature_id)
 
     def evaluation(self):
         return self.model.observed.values.squeeze()[1:]
@@ -258,6 +384,17 @@ class SpotpySetup:
         )
         correlation = np.corrcoef(evaluation, simulation)[0, 1]
 
+
+        #check which process is running this
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        print(f"Process {rank} is in the objective function.")
+        print(f"Process {rank} is in the objective function.")
+        print(f"Process {rank} is in the objective function.")
+        print(f"Process {rank} is in the objective function.")
+
+
+
         # Log to TensorBoard if writer is available
         if self.writer:
             # Log objective function value
@@ -268,12 +405,16 @@ class SpotpySetup:
             self.writer.add_scalar("Metrics/RMSE", rmse, self.run_id)
             self.writer.add_scalar("Metrics/Correlation", correlation, self.run_id)
 
+            comm = MPI.COMM_WORLD
+            rank = comm.Get_rank()
+
+            if rank != 0:
             # Log parameters
-            for i, param_name in enumerate(self.param_names):
-                if i < len(self.current_params):
-                    self.writer.add_scalar(
-                        f"Parameters/{param_name}", self.current_params[i], self.run_id
-                    )
+                for i, param_name in enumerate(self.param_names):
+                    if i < len(self.current_params):
+                        self.writer.add_scalar(
+                            f"Parameters/{param_name}", self.current_params[i], self.run_id
+                        )
 
             # Log hydrographs periodically (every 10 iterations)
             if self.run_id % 10 == 0:
@@ -390,6 +531,17 @@ def run_spotpy(
 
     # writer.add_hparams(hparams, {"dummy": 0})  # TensorBoard requires at least one metric
 
+    #checking which process is running this
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+
+    print("Creating SpotpySetup optimizer...")
+    print("Creating SpotpySetup optimizer...")
+    print("Creating SpotpySetup optimizer...")
+    print("Creating SpotpySetup optimizer...")
+    print(f"{rank} process is creating the SpotpySetup optimizer.")
+
+
     optimizer = SpotpySetup(
         model_setup, data_dir, feature_id, invert_objective, obj_func, writer, objective_function
     )
@@ -397,22 +549,26 @@ def run_spotpy(
 
     # SCE hyperparameters
     if algorithm == "SCE":
-        sampler = spotpy.algorithms.sceua(optimizer, dbname=db_name, dbformat="csv")
-        sampler.sample(repetitions, ngs=20)
+        sampler = spotpy.algorithms.sceua(optimizer, dbname=db_name, dbformat="csv", parallel ="mpi")
+        sampler.sample(repetitions, ngs=5)
 
     elif algorithm == "DDS":
-        sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv")
+        sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv",parallel ="mpi")
         sampler.sample(repetitions, trials=int(dds_trials))
 
     results = sampler.getdata()
-
     # Final results to TensorBoard
     best_params = spotpy.analyser.get_best_parameterset(results, maximize=best_is_higher)
+
+    print("*********CALIBRATION COMPLETE**********")
+    print("***************************************")
+    print("***************************************")
+    print(f"*******BEST PARAMETERS**********: {best_params}")
+
     # Log final best parameters
     for i, param_name in enumerate(optimizer.param_names):
         if i < len(best_params[0]):
             writer.add_scalar(f"FinalBestParameters/{param_name}", best_params[0][i], 0)
-
     # Close TensorBoard writer
     writer.close()
 
