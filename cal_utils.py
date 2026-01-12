@@ -16,7 +16,6 @@ import tempfile
 import yaml
 import shutil
 from mpi4py import MPI
-import socket
 
 from plots import (
     create_interactive_plots,
@@ -114,6 +113,7 @@ class NextGenSetup:
         observed_flow_path,
         troute_output_path,
         data_dir,
+        execution_mode="parallel",
     ):
         self.gage_id = gage_id
         self.training_start_date = pd.to_datetime(training_start_date)
@@ -128,6 +128,7 @@ class NextGenSetup:
         self.troute_output_path = troute_output_path
         self.realization_path = Path(data_dir) / "config" / "realization.json"
         self.data_dir = data_dir
+        self.execution_mode = execution_mode
 
     def write_config(self, realization_path_name, params):
         realization_path = Path(self.data_dir)/ "config" / realization_path_name
@@ -162,43 +163,16 @@ class NextGenSetup:
 
 
     def run_model(self, gage_id, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir):
-        # troute_output_folder = Path(data_dir) / "outputs" / "troute"
-        # ngen_output_folder = Path(data_dir) / "outputs" / "ngen"
-
-        # for file in Path(temp_troute_output_dir).glob("*.nc"):
-        #     file.unlink()
-        #     # print("T-route has been removed from previous run")
-        # for file in Path(temp_ngen_output_dir).glob("*.csv"):
-        #     file.unlink()
-
-        gpkg_path = "/ngen/ngen/data/config/" + f"gage-{str(gage_id)}_subset.gpkg"
-        cmd_base = f"docker run --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
-        ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
-        # troute_cmd = f"docker run -it --entrypoint python -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image -m nwm_routing -f ./config/{troute_yaml}"
-
-
         try:
-            # model = PyNGIAB(data_dir, serial_execution_mode=True)
-            # model.run()
+            if self.execution_mode == "serial":
+                cmd_base = f"docker run --entrypoint /ngen/Sonam_NGEN.sh -v /home/slama/Documents/hf3_remap/hf3_remap/output/gage-10109001:/ngen/ngen/data slama07/ngen_parallel_realization:0.1 /ngen/ngen/data/ auto 100 local config/{os.path.basename(realization)}"
+                subprocess.call(cmd_base, shell=True)
 
-            subprocess.call(cmd_base + ngen_cmd, shell=True)
-
-            # command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast_cal /ngen/ngen/data/ auto 100 local'
-            # # command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" joshcu/ngiab:fast /ngen/ngen/data/ auto 100 local'
-            # subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
-
-            # subprocess.run(troute_cmd)
-            # print("Routing complete.")
-
-            # command = f'docker run --rm -it -v "{data_dir}:/ngen/ngen/data" --entrypoint /ngen/HelloNGEN.sh slama:0.1 /ngen/ngen/data/'
-            # subprocess.call(command, shell=True)
-            # print("Next Gen run complete.")
-
-
-
-            # route_command = f"route_rs {data_dir}"
-            # subprocess.run(route_command, shell=True, stdout=subprocess.DEVNULL)
-            # print("routing complete.")
+            else:
+                gpkg_path = "/ngen/ngen/data/config/" + f"gage-{str(gage_id)}_subset.gpkg"
+                cmd_base = f"docker run --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
+                ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"               
+                subprocess.call(cmd_base + ngen_cmd, shell=True)
         except:
             raise RuntimeError("Next Gen run failed.")
 
@@ -253,6 +227,7 @@ class SpotpySetup:
         objective_function,
         writer=None,
         objective_function_name=None,
+        execution_mode="parallel",
     ):
         self.obj_func = objective_function
         self.objective_function_name = objective_function_name
@@ -262,6 +237,7 @@ class SpotpySetup:
         self.feature_id = feature_id
         self.run_id = 0
         self.writer = writer
+        self.execution_mode = execution_mode
         self.best_objective = float("inf") if not invert_objective else float("-inf")
 
         # Get parameter names for logging
@@ -314,26 +290,6 @@ class SpotpySetup:
         print(f"Temporary Nextgen output directory: {temp_ngen_output_dir}")
         print(f"Temporary T-route output directory: {temp_troute_output_dir}")
 
-        # tracking_file = os.path.join(f"process_rank_{rank}_pid_{pid}.txt")
-        # with open(tracking_file, 'w') as f:
-        #     f.write(f"Process Information\n")
-        #     f.write(f"==================\n")
-        #     f.write(f"MPI Rank: {rank}\n")
-        #     f.write(f"Process ID: {pid}\n")
-        #     f.write(f"Hostname: {hostname}\n")
-        #     f.write(f"Process Name: prterun-{hostname}-{pid}@1,{rank}\n")
-        #     f.write(f"\nTemporary Files\n")
-        #     f.write(f"===============\n")
-        #     f.write(f"Realization Config: {temp_file_realization_name}\n")
-        #     f.write(f"Troute YAML Config: {temp_file_yaml_name}\n")
-        #     f.write(f"\nOutput Directories\n")
-        #     f.write(f"==================\n")
-        #     f.write(f"Nextgen Output: {temp_ngen_output_dir}\n")
-        #     f.write(f"T-route Output: {temp_troute_output_dir}\n")
-        #     f.write(f"\nTimestamp: {pd.Timestamp.now()}\n")
-        
-        # print(f"[Rank {rank}] Process tracking file created: {tracking_file}")
-
         update_output_path(temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir)
 
 
@@ -380,12 +336,12 @@ class SpotpySetup:
             self.writer.add_scalar("Metrics/Correlation", correlation, self.run_id)
 
 
-            # Log parameters
-            for i, param_name in enumerate(self.param_names):
-                if i < len(self.current_params):
-                    self.writer.add_scalar(
-                        f"Parameters/{param_name}", self.current_params[i], self.run_id
-                    )
+            # # Log parameters
+            # for i, param_name in enumerate(self.param_names):
+            #     if i < len(self.current_params):
+            #         self.writer.add_scalar(
+            #             f"Parameters/{param_name}", self.current_params[i], self.run_id
+            #         )
 
             # Log hydrographs periodically (every 10 iterations)
             if self.run_id % 2 == 0:
@@ -445,6 +401,8 @@ def run_spotpy(
     objective_function,
     repetitions=25,
     dds_trials=5,
+    execution_mode="parallel",
+    number_of_cores=4,
     tensorboard_logdir=None,
 ):
     # Model setup
@@ -456,6 +414,7 @@ def run_spotpy(
         observed_flow_path,
         troute_output_path,
         data_dir,
+        execution_mode=execution_mode,
     )
 
     if objective_function == "KGE":
@@ -471,15 +430,6 @@ def run_spotpy(
         algorithm_maximizes = False
 
     invert_objective = best_is_higher != algorithm_maximizes
-
-    # if best_is_higher and not algorithm_maximizes:
-    #     invert_objective = True
-    # elif best_is_higher and algorithm_maximizes:
-    #     invert_objective = False
-    # elif not best_is_higher and algorithm_maximizes:
-    #     invert_objective = True
-    # elif not best_is_higher and not algorithm_maximizes:
-    #     invert_objective = False
 
     # Set up TensorBoard writer
     if tensorboard_logdir is None:
@@ -502,17 +452,24 @@ def run_spotpy(
 
     # writer.add_hparams(hparams, {"dummy": 0})  # TensorBoard requires at least one metric
     optimizer = SpotpySetup(
-        model_setup, data_dir, feature_id, invert_objective, obj_func, writer, objective_function
+        model_setup, data_dir, feature_id, invert_objective, obj_func, writer, objective_function, execution_mode
     )
     db_name = f"{optimizer.output_dir}/spotpy_results_{algorithm}_{objective_function}"
 
     # SCE hyperparameters
     if algorithm == "SCE":
-        sampler = spotpy.algorithms.sceua(optimizer, dbname=db_name, dbformat="csv", parallel ="mpi")
-        sampler.sample(repetitions, ngs=5)
+        if execution_mode == "serial":
+            sampler = spotpy.algorithms.sceua(optimizer, dbname=db_name, dbformat="csv")
+            sampler.sample(repetitions, ngs=5)
+        else:
+            sampler = spotpy.algorithms.sceua(optimizer, dbname=db_name, dbformat="csv", parallel="mpi")
+            sampler.sample(repetitions, ngs=max((number_of_cores - 1), 5))
 
     elif algorithm == "DDS":
-        sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv",parallel ="mpi")
+        if execution_mode == "serial":
+            sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv")
+        else:
+            sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv", parallel="mpi")
         sampler.sample(repetitions, trials=int(dds_trials))
 
     results = sampler.getdata()
