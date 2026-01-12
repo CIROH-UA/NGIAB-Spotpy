@@ -20,7 +20,7 @@ This tool performs automated calibration of the NextGen hydrologic model using S
 - Docker (for NextGen model execution)
 - Required Python packages:
   ```bash
-  pip install mpi4py spotpy xarray pandas numpy matplotlib tensorboardX dataretrieval pyyaml
+  pip install -r requirements.txt
   ```
 
 ## Installation
