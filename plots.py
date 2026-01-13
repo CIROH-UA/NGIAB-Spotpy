@@ -33,7 +33,6 @@ def plot_parametertrace(
 
     for i, name in enumerate(parameternames):
         ax = axes[i]
-
         # Use seaborn line plot styling
         data = results["par" + name]
         x_range = range(len(data))
@@ -217,7 +216,7 @@ def create_interactive_plots(
 
     from bokeh.layouts import column, gridplot
     from bokeh.models import ColumnDataSource, HoverTool, Panel, Tabs
-    from bokeh.palettes import Category10, RdYlBu11
+    from bokeh.palettes import Category10, RdYlBu11, Category20
     from bokeh.plotting import figure, output_file, save
     from bokeh.transform import linear_cmap
 
@@ -239,7 +238,7 @@ def create_interactive_plots(
 
     # 1. Parameter Traces Tab
     trace_plots = []
-    colors = Category10[10] if len(parameternames) <= 10 else Category10[20]
+    colors = Category10[10] if len(parameternames) <= 10 else Category20[20]
 
     for i, name in enumerate(parameternames):
         data = results["par" + name]

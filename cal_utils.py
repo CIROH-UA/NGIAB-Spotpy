@@ -28,7 +28,6 @@ from plots import (
 sys.path.append("/ngen/pyngiab")
 
 def update_output_path(realization_path_name, troute_config_file_name, temp_ngen_output_dir, temp_troute_output_dir):
-
     #updating troute and ngen output path in realization
     with open(realization_path_name, 'r') as f:
         data = json.load(f)
@@ -188,11 +187,13 @@ class NextGenSetup:
 
     def evaluate(self, temp_troute_output_dir, feature_id):
         ds = xr.open_dataset(self.troute_output_path)
+        breakpoint()
         simulated = ds["flow"].sel(feature_id=feature_id).values
         actual_start = min(self.training_start_date, self.observed.index[0])
         simulated = simulated[ds["time"] >= actual_start]
         simulated = simulated[: len(self.observed) - 1]
-        shutil.rmtree(temp_troute_output_dir)
+        # simulated = ds.sel(feature_id=feature_id, time = self.observed.index).flow.values[:len(self.observed)-1]
+        # shutil.rmtree(temp_troute_output_dir)
         return simulated
 
 
@@ -380,12 +381,11 @@ class SpotpySetup:
 
 
 def plot_results(results, observation_data, output_dir):
-    plot_parametertrace(results, output_dir)
-    plot_parameterInteraction(results, output_dir)
-    plot_bestmodelrun(results, observation_data, output_dir)
-    plot_parameter_correlation(results, output_dir)
-    create_interactive_plots(results, observation_data, output_dir)
-
+    plot_parametertrace(results=results, output_folder=output_dir)
+    plot_parameterInteraction(results=results, output_folder=output_dir)
+    plot_bestmodelrun(results=results, evaluation=observation_data, output_folder=output_dir)
+    plot_parameter_correlation(results=results, output_folder=output_dir)
+    # create_interactive_plots(results=results, evaluation=observation_data, output_folder=output_dir)
 
 # === Function to Run SPOTPY Calibration with TensorBoard ===
 def run_spotpy(
@@ -517,7 +517,7 @@ def run_spotpy(
     writer.close()
 
     # Generate standard plots
-    # plot_results(results, optimizer.evaluation(), f"{data_dir}/spotpy/plots")
+    plot_results(results, optimizer.evaluation(), f"{data_dir}/spotpy/plots")
 
     print(f"\nTensorBoard logs saved to: {tensorboard_logdir}/{run_name}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results")
