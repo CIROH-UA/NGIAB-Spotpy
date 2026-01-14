@@ -39,7 +39,7 @@ This tool performs automated calibration of the NextGen hydrologic model using S
 
 **Prepare Data:**
 ```bash
-  uvx --from ngiab_data_preprocess cli -i gage-10109001 -sfr --start 2015-10-01 --end 2019-12-01
+uvx --from ngiab_data_preprocess cli -i gage-10109001 -sfr --start 2015-10-01 --end 2019-12-01
 ```
 
 **Serial execution (single process):**
