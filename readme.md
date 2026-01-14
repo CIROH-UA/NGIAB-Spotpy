@@ -160,19 +160,6 @@ python main.py \
     --execution_mode serial
 ```
 
-### Example 4: Debugging with tagged output
-```bash
-mpirun -n 5 --oversubscribe --tag-output python main.py \
-    --gage_id 10109001 \
-    --feature_id 2861391 \
-    --start_date 2015-10-01 \
-    --end_date 2019-12-01 \
-    --training_start_date 2017-10-02 \
-    --data_root /home/slama/Documents/hf3_remap/hf3_remap/output \
-    --execution_mode parallel \
-    2>&1 | tee calibration.log
-```
-
 ## Understanding the Output
 
 ### Directory Structure
@@ -266,10 +253,12 @@ Check USGS data availability: https://waterdata.usgs.gov/nwis
 **Error:** Docker execution fails during model run
 
 **Solutions:**
-1. Verify Docker image exists: `docker images | grep joshcu/ngiab`
-2. Check Docker is running: `sudo systemctl status docker`
-3. Ensure data directory is accessible: Check permissions on `data_root`
-4. Test Docker manually:
+1. Verify Docker image exists:
+   `docker images | grep joshcu/ngiab`
+   `docker images | grep slama07/ngen_parallel_realization:0.1`
+3. Check Docker is running: `sudo systemctl status docker`
+4. Ensure data directory is accessible: Check permissions on `data_root`
+5. Test Docker manually:
    ```bash
    docker run --rm -it -v "/path/to/data:/ngen/ngen/data" joshcu/ngiab:fast_cal ls /ngen/ngen/data
    ```
