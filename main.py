@@ -1,10 +1,13 @@
+import sys
+import os
+from mpi4py import MPI
 import json
 import argparse
 from datetime import datetime
 from pathlib import Path
 
 from cal_utils import process_usgs_streamflow, run_spotpy
-from mpi4py import MPI
+
 
 def get_troute_output_name(path):
     with open(path, "r") as file:
@@ -35,7 +38,7 @@ def main():
  
     # Setup paths
     realization_path = f"{args.data_root}/gage-{args.gage_id}/config/realization.json"
-    observed_flow_path = f"{args.data_root}/{args.gage_id}_observed_flow.pkl"
+    observed_flow_path = f"{args.data_root}/{args.gage_id}_observed_flow_{args.start_date}_{args.end_date}.pkl"
     troute_output_path = (
         f"{args.data_root}/gage-{args.gage_id}/outputs/troute/{get_troute_output_name(realization_path)}"
     )
@@ -65,7 +68,6 @@ def main():
     
     # Synchronize all processes
     comm.Barrier()
-    
     try:
         if rank == 0:
             print(f"\n{'='*60}")
@@ -100,24 +102,28 @@ def main():
             number_of_cores = size if args.execution_mode == "parallel" else 1,
             tensorboard_logdir=tensorboard_logdir,
         )
+
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
         
         # Only rank 0 saves results
-        if rank == 0:
-            # Save the best parameters to a file
-            output_file = f"{data_dir}/spotpy/best_params.csv"
-            with open(output_file, "w") as file:
-                header = ",".join([name[3:] for name in best_params[0].dtype.names])
-                file.write(header + "\n")
-                values = ",".join([str(value) for value in best_params[0]])
-                file.write(values + "\n")
-            
-            print(f"\n{'='*60}")
-            print(f"CALIBRATION COMPLETE")
-            print(f"{'='*60}") 
-            print(f"Best parameters saved to: {output_file}")
-            print(f"\nTo view TensorBoard results, run:")
-            print(f"tensorboard --logdir={tensorboard_logdir}")
-            print(f"{'='*60}\n")
+        # if rank == 0:
+        # Save the best parameters to a file
+        output_file = f"{data_dir}/spotpy/best_params.csv"
+        with open(output_file, "w") as file:
+            header = ",".join([name[3:] for name in best_params[0].dtype.names])
+            file.write(header + "\n")
+            values = ",".join([str(value) for value in best_params[0]])
+            file.write(values + "\n")
+        
+        print(f"\n{'='*60}")
+        print(f"CALIBRATION COMPLETE")
+        print(f"{'='*60}") 
+        print(f"Best parameters saved to: {output_file}")
+        print(f"\nTo view TensorBoard results, run:")
+        print(f"tensorboard --logdir={tensorboard_logdir}")
+        print(f"{'='*60}\n")
+        # MPI.COMM_WORLD.Abort(0)
             
     except Exception as e:
         print(f"run_spotpy failed with error: {e} (Process rank {rank})")

@@ -16,6 +16,7 @@ import tempfile
 import yaml
 import shutil
 from mpi4py import MPI
+import matplotlib.pyplot as plt
 
 from plots import (
     create_interactive_plots,
@@ -187,11 +188,14 @@ class NextGenSetup:
 
     def evaluate(self, temp_troute_output_dir, feature_id):
         ds = xr.open_dataset(self.troute_output_path)
-        breakpoint()
         simulated = ds["flow"].sel(feature_id=feature_id).values
         actual_start = min(self.training_start_date, self.observed.index[0])
         simulated = simulated[ds["time"] >= actual_start]
         simulated = simulated[: len(self.observed) - 1]
+        plt.plot([i for i in range(len(simulated))], simulated, label="Simulated")
+        plt.plot([i for i in range(len(self.observed)-1)], self.observed.values.squeeze()[1:], label="Observed")
+        plt.legend()
+        plt.savefig(temp_troute_output_dir + "/sim_vs_obs.png")
         # simulated = ds.sel(feature_id=feature_id, time = self.observed.index).flow.values[:len(self.observed)-1]
         # shutil.rmtree(temp_troute_output_dir)
         return simulated
@@ -326,7 +330,7 @@ class SpotpySetup:
 
 
 
-        # Log to TensorBoard if writer is available
+        # # Log to TensorBoard if writer is available
         if self.writer:
             # Log objective function value
             self.writer.add_scalar("Metrics/Objective_Function", objective_metric, self.run_id)
@@ -344,7 +348,7 @@ class SpotpySetup:
             #             f"Parameters/{param_name}", self.current_params[i], self.run_id
             #         )
 
-            # Log hydrographs periodically (every 10 iterations)
+            # Log hydrographs periodically (every 2 iterations)
             if self.run_id % 2 == 0:
                 fig, ax = plt.subplots(figsize=(12, 6))
                 ax.plot(evaluation, label="Observed", color="black", linewidth=1.5)
@@ -484,7 +488,7 @@ def run_spotpy(
 
     best_params_value = best_params[0]
     realization_path = Path(data_dir)/ "config" / "realization.json"
-
+    print(f"Updating the best parameters in the realization file: {realization_path}")
     param_map = {
         "b": best_params_value[0],
         "satpsi": best_params_value[1],
@@ -509,14 +513,14 @@ def run_spotpy(
         }
     update_parameters(realization_path, noah_param_updates, "NoahOWP")
 
-    # Log final best parameters
+    # # Log final best parameters
     for i, param_name in enumerate(optimizer.param_names):
         if i < len(best_params[0]):
             writer.add_scalar(f"FinalBestParameters/{param_name}", best_params[0][i], 0)
     # Close TensorBoard writer
     writer.close()
 
-    # Generate standard plots
+    # # Generate standard plots
     plot_results(results, optimizer.evaluation(), f"{data_dir}/spotpy/plots")
 
     print(f"\nTensorBoard logs saved to: {tensorboard_logdir}/{run_name}")
