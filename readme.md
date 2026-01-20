@@ -44,7 +44,7 @@ uvx --from ngiab_data_preprocess cli -i gage-10109001 -sfr --start 2015-10-01 --
 
 **Serial execution (single process):**
 ```bash
-python main.py \
+python -u main.py \
     --gage_id 10109001 \
     --feature_id 2861391 \
     --start_date 2015-10-01 \
@@ -56,7 +56,7 @@ python main.py \
 
 **Parallel execution (recommended for faster calibration):**
 ```bash
-mpirun -n 11 --oversubscribe python main.py \
+mpirun -n 11 --oversubscribe python -u main.py \
     --gage_id 10109001 \
     --feature_id 2861391 \
     --start_date 2015-10-01 \
@@ -218,7 +218,7 @@ TensorBoard displays:
 
 **Solution:** Add the `--oversubscribe` flag to mpirun:
 ```bash
-mpirun -n 20 --oversubscribe python main.py [arguments]
+mpirun -n 20 --oversubscribe python -u main.py [arguments]
 ```
 
 
