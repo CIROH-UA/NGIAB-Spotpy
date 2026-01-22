@@ -66,6 +66,9 @@ mpirun -n 11 --oversubscribe python -u main.py \
     --execution_mode parallel
 ```
 
+**Note:**
+-u flag is to force unbuffered I/O which helps to immediately write. Can be helpful for debugging because the print statement follows the sequential flow of the code. Can be removed later when output from docker run is suppressed.
+
 ## Command Line Arguments
 
 ### Required Arguments
