@@ -460,6 +460,26 @@ def run_spotpy(
     )
     db_name = f"{optimizer.output_dir}/spotpy_results_{algorithm}_{objective_function}"
 
+    #check if the parameters already exist in the realization file
+    realization_path = Path(data_dir)/ "config" / "realization.json"
+    with open(realization_path, 'r') as f:
+        config = json.load(f)
+
+    models_list = ["CFE", "NoahOWP"]
+    parameters_available = False
+    models_config = config["global"]["formulations"][0]["params"]["modules"]
+    parameters = []
+    for model_type_name in models_list:
+        for model in models_config:
+            if model["params"]["model_type_name"] == model_type_name:
+                if "model_params" in model["params"].keys():
+                    parameters_available = True
+                    parameters.extend(list(model["params"]["model_params"].values()))
+                    print(f"Model: {model_type_name} has parameters available.")
+                else:
+                    parameters_available = False
+                    break
+    
     # SCE hyperparameters
     if algorithm == "SCE":
         if execution_mode == "serial":
@@ -474,7 +494,13 @@ def run_spotpy(
             sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv")
         else:
             sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv", parallel="mpi")
-        sampler.sample(repetitions, trials=int(dds_trials))
+        if parameters_available:
+            #realization file doesn't have snow emis
+            parameters.insert(11, np.random.uniform(0.9, 1))
+            parameters = np.array(parameters)
+            sampler.sample(repetitions, trials=int(dds_trials), x_initial=parameters)
+        else:
+            sampler.sample(repetitions, trials=int(dds_trials))
 
     results = sampler.getdata()
     # Final results to TensorBoard
@@ -487,7 +513,6 @@ def run_spotpy(
 
 
     best_params_value = best_params[0]
-    realization_path = Path(data_dir)/ "config" / "realization.json"
     print(f"Updating the best parameters in the realization file: {realization_path}")
     param_map = {
         "b": best_params_value[0],

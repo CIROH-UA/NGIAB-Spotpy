@@ -123,7 +123,7 @@ def main():
         print(f"\nTo view TensorBoard results, run:")
         print(f"tensorboard --logdir={tensorboard_logdir}")
         print(f"{'='*60}\n")
-        # MPI.COMM_WORLD.Abort(0)
+        MPI.COMM_WORLD.Abort(0)
             
     except Exception as e:
         print(f"run_spotpy failed with error: {e} (Process rank {rank})")
