@@ -33,7 +33,7 @@ def update_output_path(realization_path_name, troute_config_file_name, temp_ngen
     with open(realization_path_name, 'r') as f:
         data = json.load(f)
     data['output_root'] = os.path.join("outputs/ngen",os.path.basename(temp_ngen_output_dir))
-    data['routing']['t_route_config_file_with_path'] = os.path.join("config",os.path.basename(troute_config_file_name))
+    # data['routing']['t_route_config_file_with_path'] = os.path.join("config",os.path.basename(troute_config_file_name))
     with open(realization_path_name, 'w') as f:
         json.dump(data, f, indent=4)
 
@@ -113,6 +113,7 @@ class NextGenSetup:
         observed_flow_path,
         troute_output_path,
         data_dir,
+        groups,
         execution_mode="parallel",
     ):
         self.gage_id = gage_id
@@ -128,6 +129,7 @@ class NextGenSetup:
         self.troute_output_path = troute_output_path
         self.realization_path = Path(data_dir) / "config" / "realization.json"
         self.data_dir = data_dir
+        self.groups = groups
         self.execution_mode = execution_mode
 
     def write_config(self, realization_path_name, params):
@@ -162,19 +164,48 @@ class NextGenSetup:
         # update_snow_emis(self.data_dir, params[11])
 
 
-    def run_model(self, gage_id, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir):
+    def run_model(self, gage_id, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir, groups):
+        #running nextgen simulation ro get lateral flows
+        gpkg_path = Path("/ngen/ngen/data/config/merged.gpkg") 
         try:
             if self.execution_mode == "serial":
-                cmd_base = f"docker run --entrypoint /ngen/Sonam_NGEN.sh -v /home/slama/Documents/hf3_remap/hf3_remap/output/gage-10109001:/ngen/ngen/data slama07/ngen_parallel_realization:0.1 /ngen/ngen/data/ auto 100 local config/{os.path.basename(realization)}"
-                subprocess.call(cmd_base, shell=True)
+                cmd_base = f"docker run --entrypoint mpirun -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image /dmod/bin/ngen-parallel"
+                ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
+                print(cmd_base + ngen_cmd)
+                subprocess.call(cmd_base + ngen_cmd, shell=True)
 
             else:
-                gpkg_path = "/ngen/ngen/data/config/" + f"gage-{str(gage_id)}_subset.gpkg"
                 cmd_base = f"docker run --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
-                ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"               
+                ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
+                print(cmd_base + ngen_cmd)               
                 subprocess.call(cmd_base + ngen_cmd, shell=True)
         except:
-            raise RuntimeError("Next Gen run failed.")
+            raise RuntimeError("Next Gen Simulation failed.")
+        
+        #create symbolic link for actual lateral files to merged lateral files
+
+        #create a merged directory inside temp_ngen_output_dir
+        merged_lateral_dir = os.path.join(temp_ngen_output_dir, "merged")
+        os.makedirs(merged_lateral_dir, exist_ok=True)
+        #mv onlyfiles from temp_ngen_directory to merged directory
+        os.system(f"mv {temp_ngen_output_dir}/cat-*.csv {merged_lateral_dir}/")
+
+        #groups is a list of list, each sublist contains cat ids that were used to create a merged lateral file
+        #so, a symbolic link must be created for each cat-id in the sublist to point to the merged lateral file
+        merged_files = Path(merged_lateral_dir).glob("cat-*")
+
+        sub_list_counter = 0
+        for merged_file in merged_files:
+            for cat_id in groups[sub_list_counter]:
+                os.system(f"ln -s /ngen/ngen/data/outputs/ngen/{os.path.basename(temp_ngen_output_dir)}/merged/{merged_file.name} {temp_ngen_output_dir}/cat-{cat_id}.csv")
+            sub_list_counter += 1
+
+        #running troute simulation to get streamflow
+        try:
+            cmd = f"docker run --entrypoint python -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image -m nwm_routing -f /ngen/ngen/data/config/{os.path.basename(troute_yaml)}"
+            subprocess.call(cmd, shell=True)
+        except:
+            raise RuntimeError("T-route run failed.")
 
         self.troute_output_path = os.path.join(temp_troute_output_dir, os.path.basename(self.troute_output_path))
         if not os.path.exists(self.troute_output_path):
@@ -192,12 +223,11 @@ class NextGenSetup:
         actual_start = min(self.training_start_date, self.observed.index[0])
         simulated = simulated[ds["time"] >= actual_start]
         simulated = simulated[: len(self.observed) - 1]
-        plt.plot([i for i in range(len(simulated))], simulated, label="Simulated")
-        plt.plot([i for i in range(len(self.observed)-1)], self.observed.values.squeeze()[1:], label="Observed")
-        plt.legend()
-        plt.savefig(temp_troute_output_dir + "/sim_vs_obs.png")
-        # simulated = ds.sel(feature_id=feature_id, time = self.observed.index).flow.values[:len(self.observed)-1]
-        # shutil.rmtree(temp_troute_output_dir)
+        # plt.plot([i for i in range(len(simulated))], simulated, label="Simulated")
+        # plt.plot([i for i in range(len(self.observed)-1)], self.observed.values.squeeze()[1:], label="Observed")
+        # plt.legend()
+        # plt.savefig(temp_troute_output_dir + "/sim_vs_obs.png")
+        shutil.rmtree(temp_troute_output_dir)
         return simulated
 
 
@@ -297,9 +327,8 @@ class SpotpySetup:
 
         update_output_path(temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir)
 
-
         self.model.write_config(temp_file_realization_name, vector)
-        self.model.run_model(self.model.gage_id, temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir)
+        self.model.run_model(self.model.gage_id, temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir, self.model.groups)
         return self.model.evaluate(temp_troute_output_dir,self.feature_id)
 
     def evaluation(self):
@@ -403,6 +432,7 @@ def run_spotpy(
     feature_id,
     algorithm,
     objective_function,
+    groups,
     repetitions=25,
     dds_trials=5,
     execution_mode="parallel",
@@ -418,6 +448,7 @@ def run_spotpy(
         observed_flow_path,
         troute_output_path,
         data_dir,
+        groups,
         execution_mode=execution_mode,
     )
 
@@ -480,6 +511,7 @@ def run_spotpy(
                     parameters_available = False
                     break
     
+    parameters_available = False
     # SCE hyperparameters
     if algorithm == "SCE":
         if execution_mode == "serial":
@@ -498,7 +530,7 @@ def run_spotpy(
             #realization file doesn't have snow emis
             parameters.insert(11, np.random.uniform(0.9, 1))
             parameters = np.array(parameters)
-            sampler.sample(repetitions, trials=int(dds_trials), x_initial=parameters)
+            sampler.sample(repetitions, trials=int(dds_trials))
         else:
             sampler.sample(repetitions, trials=int(dds_trials))
 

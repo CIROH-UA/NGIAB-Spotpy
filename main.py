@@ -5,7 +5,8 @@ import json
 import argparse
 from datetime import datetime
 from pathlib import Path
-
+from hf_resample.geopackage import GeoPackage
+from hf_resample.main import *
 from cal_utils import process_usgs_streamflow, run_spotpy
 
 
@@ -15,6 +16,147 @@ def get_troute_output_name(path):
     start_date = datetime.strptime(realization["time"]["start_time"], "%Y-%m-%d %H:%M:%S")
     return f"troute_output_{start_date.strftime('%Y%m%d%H%M')}.nc"
 
+
+def prepare_config_merged_simulation(realization_path, troute_path):
+    '''This function prepares the realization_file and t-route file
+    for merged catchment simulation.'''
+
+    print("Preparing configuration files for merged geopackage simulation...")
+    #removing routing parameter from the realization file
+    with open(realization_path, "r") as file:
+        realization = json.load(file)
+    if "routing" in realization.keys():
+        realization.pop("routing", None)
+    with open(realization_path, "w") as file:
+        json.dump(realization, file, indent=4)
+    
+
+    #catchment routing should be done nexus routing is not an option for the merged geopackage
+    with open(troute_path , "r") as f:
+        config = f.readlines()
+    new_lines = []
+    for line in config:
+        if "qlat_file_pattern_filter" in line:
+            line = line.replace('qlat_file_pattern_filter: "nex-*"', 'qlat_file_pattern_filter: "cat-*"')
+            # doing this to get indentation right
+            new_lines.append(
+                line.replace(
+                    'qlat_file_pattern_filter: "cat-*"',
+                    'qlat_file_value_col: "Q_OUT"',
+                )
+            )
+        line = line.replace("assume_short_ts: True", "assume_short_ts: False")
+        new_lines.append(line)
+    with open(troute_path, "w") as f:
+        f.writelines(new_lines)
+
+def print_calibration_configuration(args, size):
+    '''Prints calibration configuration before the calibration'''
+
+    print(f"\n{'='*60}")
+    print(f"CALIBRATION CONFIGURATION")
+    print(f"{'='*60}")
+    print(f"Gage ID: {args.gage_id}")
+    print(f"Feature ID: {args.feature_id}")
+    print(f"Start Date: {args.start_date}")
+    print(f"End Date: {args.end_date}")
+    print(f"Training Start: {args.training_start_date}")
+    print(f"Algorithm: {args.algorithm}")
+    print(f"Objective Function: {args.objective_function}")
+    print(f"Repetitions: {args.repetitions}")
+    print(f"Execution Mode: {args.execution_mode}")
+    print(f"MPI Processes: {size} (Master: 1, Workers: {size-1})")
+    print(f"{'='*60}\n")
+
+def get_partitions(data_dir, geopackage_path) -> Path:
+    data_dir = Path(data_dir)
+    size = os.cpu_count() - 1  # reserving one core for system processes
+    partition_file = next(data_dir.glob(f"partitions_{size}.json"), None)
+    if partition_file == None:
+        cmd_base = f"docker run --entrypoint python -w /ngen/ngen/data -v {data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image /dmod/utils/partitioning/round_robin.py "
+        cmd_opts = f"./config/{geopackage_path.name} {size} ."
+        os.system(cmd_base + cmd_opts)
+    partition_file = next(data_dir.glob(f"partitions_{size}.json"), None)
+    return partition_file  # return last element to get largest partitions
+
+
+def merge_and_prepare_forcing(data_dir, execution_mode):
+    '''Merges the geopackage, prepares forcing data, and creates partitions for the merged geopackage simulation.'''
+
+    #prepare partitions before merging
+
+    folder = Path(data_dir)
+    original_gpkg = folder / "config" / f"{folder.name}_subset.gpkg"
+    forcing_path = folder / "forcings"/ "forcings.nc"
+    merged_geopackage = folder / "config" / "merged.gpkg"
+
+    
+    #remove existing partiton files if any
+    partiton_files = list(folder.glob("partitions_*.json"))
+    if len(partiton_files) > 0:
+        os.system(f"rm -rf {folder}/partitions_*.json")
+
+    print("Merging geopackage and preparing forcing data...")
+    #merge the geopackage
+    hf = GeoPackage(original_gpkg)
+    groups = group_catchments(original_gpkg)
+    hf.merge(groups)
+    hf.save(merged_geopackage)
+
+    realization = folder / "config" / "realization.json"
+    troute = folder / "config" / "troute.yaml"
+    start, end = get_dates(realization)
+    backup(original_gpkg)
+
+    #move forcing file of the forcing directory just outside of the forcings folder so that new data prepared will be for the merged geopackage
+    os.system(f"mv {forcing_path} {folder}")
+
+    #rename merged geopackage to original in the folder
+    os.system(f"mv {merged_geopackage} {original_gpkg}")
+
+    backup(realization)
+    backup(troute)
+    cmd = f"uvx -p 3.10 ngiab-prep -i gage-10109001 -o {folder.name} --start {start} --end {end} -fr --source aorc"
+
+    os.system(cmd)
+
+    #rename original geopackage back to merged in the folder
+    #with this, we will have both merged geopackage and the original one
+    os.system(f"mv {original_gpkg} {merged_geopackage}")
+    restore(original_gpkg)
+    restore(realization)
+    restore(troute)
+    
+    #only create partitions if the execution mode is serial as the ngen simulation runs in parallel mode
+    if execution_mode == "serial":
+        #partitions for merged geopackage
+        get_partitions(data_dir, merged_geopackage)
+
+    return groups
+
+def restore_data_dir(data_dir):
+    '''Removes merged geopackage and forcing data prepared for merged geopackage simulation.'''
+
+    print("Removing merged geopackage and forcing data used for merged geopackage simulation...")
+    folder = Path(data_dir)
+    merged_geopackage = folder / "config" / "merged.gpkg"
+    forcing_path = folder / "forcings"/ "forcings.nc"
+
+    if merged_geopackage.exists():
+        merged_geopackage.unlink()
+    if forcing_path.exists():
+        forcing_path.unlink()
+    
+    #move original forcing file back to forcings directory
+    os.system(f"mv {folder}/forcings.nc {forcing_path}")
+
+    #remove extra tmp yaml and json files created by staggering multiprocessing calibration
+    tmp_files = list(folder.glob("config/tmp*"))
+    if len(tmp_files) > 0:
+        os.system(f"rm -rf {folder}/config/tmp*")
+
+    #remove partiton files
+    os.system(f"rm -rf {folder}/partitions_*.json")
 
 def main():
     parser = argparse.ArgumentParser(description="Run SPOTPY calibration for NextGen hydrologic model")
@@ -38,6 +180,7 @@ def main():
  
     # Setup paths
     realization_path = f"{args.data_root}/gage-{args.gage_id}/config/realization.json"
+    troute_path = f"{args.data_root}/gage-{args.gage_id}/config/troute.yaml"
     observed_flow_path = f"{args.data_root}/{args.gage_id}_observed_flow_{args.start_date}_{args.end_date}.pkl"
     troute_output_path = (
         f"{args.data_root}/gage-{args.gage_id}/outputs/troute/{get_troute_output_name(realization_path)}"
@@ -49,6 +192,7 @@ def main():
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
+    groups = None
     
     if args.execution_mode == "serial" and size > 1:
         if rank == 0:
@@ -66,25 +210,17 @@ def main():
         else:
             print(f"Using existing observed flow data: {observed_flow_path}")
     
-    # Synchronize all processes
-    comm.Barrier()
     try:
         if rank == 0:
-            print(f"\n{'='*60}")
-            print(f"CALIBRATION CONFIGURATION")
-            print(f"{'='*60}")
-            print(f"Gage ID: {args.gage_id}")
-            print(f"Feature ID: {args.feature_id}")
-            print(f"Start Date: {args.start_date}")
-            print(f"End Date: {args.end_date}")
-            print(f"Training Start: {args.training_start_date}")
-            print(f"Algorithm: {args.algorithm}")
-            print(f"Objective Function: {args.objective_function}")
-            print(f"Repetitions: {args.repetitions}")
-            print(f"Execution Mode: {args.execution_mode}")
-            print(f"MPI Processes: {size} (Master: 1, Workers: {size-1})")
-            print(f"{'='*60}\n")
-        
+            print_calibration_configuration(args=args, size=size)
+            prepare_config_merged_simulation(realization_path=realization_path, troute_path=troute_path)
+            groups = merge_and_prepare_forcing(data_dir=data_dir, execution_mode=args.execution_mode)
+
+        # Synchronize all processes
+        comm.Barrier()
+        groups = comm.bcast(groups, root=0)
+        comm.Barrier()
+
         best_params = run_spotpy(
             args.gage_id,
             args.start_date,
@@ -96,34 +232,33 @@ def main():
             args.feature_id,
             algorithm=args.algorithm,
             objective_function=args.objective_function,
+            groups=groups,
             repetitions=args.repetitions,
             dds_trials=args.dds_trials,
             execution_mode=args.execution_mode,
             number_of_cores = size if args.execution_mode == "parallel" else 1,
             tensorboard_logdir=tensorboard_logdir,
-        )
-
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        
+        )       
         # Only rank 0 saves results
-        # if rank == 0:
+        if rank == 0:
         # Save the best parameters to a file
-        output_file = f"{data_dir}/spotpy/best_params.csv"
-        with open(output_file, "w") as file:
-            header = ",".join([name[3:] for name in best_params[0].dtype.names])
-            file.write(header + "\n")
-            values = ",".join([str(value) for value in best_params[0]])
-            file.write(values + "\n")
-        
-        print(f"\n{'='*60}")
-        print(f"CALIBRATION COMPLETE")
-        print(f"{'='*60}") 
-        print(f"Best parameters saved to: {output_file}")
-        print(f"\nTo view TensorBoard results, run:")
-        print(f"tensorboard --logdir={tensorboard_logdir}")
-        print(f"{'='*60}\n")
-        MPI.COMM_WORLD.Abort(0)
+            output_file = f"{data_dir}/spotpy/best_params.csv"
+            with open(output_file, "w") as file:
+                header = ",".join([name[3:] for name in best_params[0].dtype.names])
+                file.write(header + "\n")
+                values = ",".join([str(value) for value in best_params[0]])
+                file.write(values + "\n")
+            
+            print(f"\n{'='*60}")
+            print(f"CALIBRATION COMPLETE")
+            print(f"{'='*60}") 
+            print(f"Best parameters saved to: {output_file}")
+            print(f"\nTo view TensorBoard results, run:")
+            print(f"tensorboard --logdir={tensorboard_logdir}")
+            print(f"{'='*60}\n")
+            restore_data_dir(data_dir=data_dir)
+            #stops all other ongoing processes
+            MPI.COMM_WORLD.Abort(0)
             
     except Exception as e:
         print(f"run_spotpy failed with error: {e} (Process rank {rank})")
