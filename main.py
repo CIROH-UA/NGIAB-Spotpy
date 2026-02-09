@@ -3,10 +3,11 @@ import os
 from mpi4py import MPI
 import json
 import argparse
+import yaml
 from datetime import datetime
 from pathlib import Path
-from hf_resample.geopackage import GeoPackage
-from hf_resample.main import *
+from merge_catchment.geopackage import GeoPackage
+from merge_catchment.interface import *
 from cal_utils import process_usgs_streamflow, run_spotpy
 
 
@@ -32,23 +33,12 @@ def prepare_config_merged_simulation(realization_path, troute_path):
     
 
     #catchment routing should be done nexus routing is not an option for the merged geopackage
-    with open(troute_path , "r") as f:
-        config = f.readlines()
-    new_lines = []
-    for line in config:
-        if "qlat_file_pattern_filter" in line:
-            line = line.replace('qlat_file_pattern_filter: "nex-*"', 'qlat_file_pattern_filter: "cat-*"')
-            # doing this to get indentation right
-            new_lines.append(
-                line.replace(
-                    'qlat_file_pattern_filter: "cat-*"',
-                    'qlat_file_value_col: "Q_OUT"',
-                )
-            )
-        line = line.replace("assume_short_ts: True", "assume_short_ts: False")
-        new_lines.append(line)
-    with open(troute_path, "w") as f:
-        f.writelines(new_lines)
+    with open(troute_path, 'r') as f:
+        data = yaml.safe_load(f)
+    data['compute_parameters']['forcing_parameters']['qlat_file_pattern_filter'] = "cat-*"
+    data['compute_parameters']['forcing_parameters']['qlat_file_value_col'] = "Q_OUT"
+    with open(troute_path, 'w') as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False, width=100)
 
 def print_calibration_configuration(args, size):
     '''Prints calibration configuration before the calibration'''
@@ -84,7 +74,6 @@ def merge_and_prepare_forcing(data_dir, execution_mode):
     '''Merges the geopackage, prepares forcing data, and creates partitions for the merged geopackage simulation.'''
 
     #prepare partitions before merging
-
     folder = Path(data_dir)
     original_gpkg = folder / "config" / f"{folder.name}_subset.gpkg"
     forcing_path = folder / "forcings"/ "forcings.nc"
@@ -116,7 +105,7 @@ def merge_and_prepare_forcing(data_dir, execution_mode):
 
     backup(realization)
     backup(troute)
-    cmd = f"uvx -p 3.10 ngiab-prep -i gage-10109001 -o {folder.name} --start {start} --end {end} -fr --source aorc"
+    cmd = f"uvx -p 3.10 ngiab-prep -i {folder.name} -o {folder.name} --start {start} --end {end} -fr --source aorc"
 
     os.system(cmd)
 
@@ -135,7 +124,8 @@ def merge_and_prepare_forcing(data_dir, execution_mode):
     return groups
 
 def restore_data_dir(data_dir):
-    '''Removes merged geopackage and forcing data prepared for merged geopackage simulation.'''
+    '''Removes merged geopackage,forcing data prepared for merged geopackage simulation. And removes 
+    extra tmp yaml and json files created by staggering multiprocessing calibration. Also removes partiton files.'''
 
     print("Removing merged geopackage and forcing data used for merged geopackage simulation...")
     folder = Path(data_dir)
@@ -187,6 +177,7 @@ def main():
     )
     data_dir = f"{args.data_root}/gage-{args.gage_id}"
     tensorboard_logdir = f"{data_dir}/tensorboard_logs"
+
     
     # Check execution mode
     comm = MPI.COMM_WORLD
@@ -210,6 +201,7 @@ def main():
         else:
             print(f"Using existing observed flow data: {observed_flow_path}")
     
+    comm.Barrier()  # Ensure all processes wait until here, because realization file gets changed here and there might be some conflicts
     try:
         if rank == 0:
             print_calibration_configuration(args=args, size=size)
