@@ -22,6 +22,7 @@ This tool performs automated calibration of the NextGen hydrologic model using S
   ```bash
   pip install -r requirements.txt
   ```
+- Superficial understanding of NGIAB_data_preprocessor workflow
 
 ## Installation
 
@@ -46,7 +47,6 @@ uvx --from ngiab_data_preprocess cli -i gage-10109001 -sfr --start 2015-10-01 --
 ```bash
 python -u main.py \
     --gage_id 10109001 \
-    --feature_id 2861391 \
     --start_date 2015-10-01 \
     --end_date 2019-12-01 \
     --training_start_date 2017-10-02 \
@@ -58,11 +58,10 @@ python -u main.py \
 ```bash
 mpirun -n 11 --oversubscribe python -u main.py \
     --gage_id 10109001 \
-    --feature_id 2861391 \
     --start_date 2015-10-01 \
     --end_date 2019-12-01 \
     --training_start_date 2017-10-02 \
-    --data_root /path/to/your/data \
+    --data_root /path/to/your/data (if you've trouble finding it, cat ~/.ngiab/) \
     --execution_mode parallel
 ```
 
@@ -110,7 +109,7 @@ python main.py --help
 ### Parallel Mode (Recommended)
 - Runs calibration using multiple MPI processes
 - Runs ngen simulation in serial
-- Faster for complex calibrations (2x faster than serial mode)
+- Faster for complex calibrations (Scales way better than calibration in serial and ngen in parallel)
 - Requires `mpirun` command
 - **Important:** When using MPI, rank 0 acts as the master coordinator and doesn't run simulations
   - If you want N parallel simulations, use `mpirun -n N+1`
@@ -122,14 +121,13 @@ python main.py --help
 ```bash
 mpirun -n 11 --oversubscribe python main.py \
     --gage_id 10109001 \
-    --feature_id 2861391 \
     --start_date 2015-10-01 \
     --end_date 2019-12-01 \
     --training_start_date 2017-10-02 \
     --data_root /home/slama/Documents/hf3_remap/hf3_remap/output \
     --algorithm SCE \
     --objective_function KGE \
-    --repetitions 100 \
+    --repetitions 500 \
     --execution_mode parallel
 ```
 
@@ -137,15 +135,14 @@ mpirun -n 11 --oversubscribe python main.py \
 ```bash
 mpirun -n 6 --oversubscribe python main.py \
     --gage_id 10109001 \
-    --feature_id 2861391 \
     --start_date 2015-10-01 \
     --end_date 2019-12-01 \
     --training_start_date 2017-10-02 \
     --data_root /home/slama/Documents/hf3_remap/hf3_remap/output \
     --algorithm DDS \
     --objective_function RMSE \
-    --dds_trials 10 \
-    --repetitions 50 \
+    --dds_trials 2 \
+    --repetitions 500 \
     --execution_mode parallel
 ```
 
@@ -193,6 +190,21 @@ The `spotpy_results_*.csv` file contains the complete optimization history with:
 - Objective function values
 - Iteration numbers
 - Chain/run information
+
+### MPI Error Code
+At the end of the print statements, either one of these statements is logged (depending on serial or parallel calibration used):  
+If Parallel:
+```bash
+MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD 
+Proc: [[1066,1],0] 
+Errorcode: 0 
+```  
+If Serial:
+```bash  
+Sorry! You were supposed to get help about: 
+mpi-abort
+```  
+This is just a result of forcing process to end. Nothing to worry about
 
 ## Monitoring Progress
 
@@ -258,7 +270,7 @@ Check USGS data availability: https://waterdata.usgs.gov/nwis
 **Solutions:**
 1. Verify Docker image exists:
    `docker images | grep joshcu/ngiab`
-   `docker images | grep slama07/ngen_parallel_realization:0.1`
+   `docker images | grep awiciroh/ciroh-ngen-image`
 3. Check Docker is running: `sudo systemctl status docker`
 4. Ensure data directory is accessible: Check permissions on `data_root`
 5. Test Docker manually:

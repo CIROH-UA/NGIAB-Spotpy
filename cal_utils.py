@@ -184,24 +184,27 @@ class NextGenSetup:
             "satpsi": params[1],
             "satdk": params[2],
             "maxsmc": params[3],
-            "expon": params[4],
-            "slope": params[5],
-            "Kn": params[6],
-            "Klf": params[7],
+            "refkdt": params[4],
+            "expon": params[5],
+            "slope": params[6],
+            "max_gw_storage": params[7],
+            "Kn": params[8],
+            "Klf": params[9],
+            "Cgw": params[10],
         }
 
         update_parameters(realization_path, param_map, "CFE")
 
         # Create updated NOAH parameters dictionary
         noah_param_updates = {
-            "MFSNO": params[8],  # Pass float directly
-            "MP": params[9],
-            "RSURF_EXP": params[10],
+            "MFSNO": params[11],  # Pass float directly
+            "MP": params[12],
+            "RSURF_EXP": params[13],
             # "SNOW_EMIS": params[11],
-            "CWP": params[12],
-            "VCMX25": params[13],
-            "RSURF_SNOW": params[14],
-            "SCAMAX": params[15],
+            "CWP": params[14],
+            "VCMX25": params[15],
+            "RSURF_SNOW": params[16],
+            "SCAMAX": params[17],
         }
 
         update_parameters(realization_path, noah_param_updates, "NoahOWP")
@@ -277,24 +280,27 @@ class NextGenSetup:
 # === SPOTPY Setup Class for Calibration with TensorBoard ===
 class SpotpySetup:
     # CFE model parameters
-    soil_params_b = Uniform(2.0, 15.0)
-    satpsi = Uniform(0.03, 0.955)
-    satdk = Uniform(0.0000001, 0.000726)  # hit min
-    maxsmc = Uniform(0.16, 1.0)  # hit max set to 0.8
-    expon = Uniform(1.0, 8.0)
-    slope = Uniform(0.0, 1.0)
-    K_nash_subsurface = Uniform(0.01, 1.0)
-    K_lf = Uniform(0.005, 1.0)
+    soil_params_b = Uniform(2.0, 15.0, optguess=4.05)
+    satpsi = Uniform(0.03, 0.955, optguess=0.355)
+    satdk = Uniform(0.0000001, 0.000726, optguess=0.00000338)  # hit min
+    maxsmc = Uniform(0.16, 0.59, optguess=0.439)  # hit max set to 0.8
+    refkdt = Uniform(0.1, 4.0, optguess=1.0)  ######new
+    expon = Uniform(1.0, 8.0, optguess=3.0)
+    slope = Uniform(0.0, 1.0, optguess=0.1)
+    max_gw_storage = Uniform(0.01, 0.25, optguess=0.05)  ######### new
+    K_nash_subsurface = Uniform(0.0, 1.0, optguess=0.03)
+    K_lf = Uniform(0.0, 1.0, optguess=0.01)
+    Cgw = Uniform(0.0000018, 0.0018, optguess=0.000018)
 
-    # Additional NOAH OWP Modular parameters
-    MFSNO = Uniform(0.5, 4.0)  # multiplier on snowfall melt factor
-    MP = Uniform(3.6, 14.6)  # hit max
-    RSURF_EXP = Uniform(1.0, 15.0)  # hit max
-    SNOW_EMIS = Uniform(0.90, 1.0)  # snow emissivity
-    CWP = Uniform(0.09, 0.36)
-    VCMX25 = Uniform(24.0, 152.0)
-    RSURF_SNOW = Uniform(0.0, 100.0)  # hit min
-    SCAMAX = Uniform(0.7, 1.0)
+    # # Additional NOAH OWP Modular parameters
+    MFSNO = Uniform(0.5, 4.0, optguess=2.0)  # multiplier on snowfall melt factor
+    MP = Uniform(3.6, 12.6, optguess=9.0)  # hit max
+    RSURF_EXP = Uniform(1.0, 6.0, optguess=5.0)  # hit max
+    # SNOW_EMIS = Uniform(0.90, 1.0)  # snow emissivity
+    CWP = Uniform(0.09, 0.36, optguess=0.18)
+    VCMX25 = Uniform(24.0, 112.0, optguess=52.2)
+    RSURF_SNOW = Uniform(0.136, 100.0, optguess=50.0)  # hit min
+    SCAMAX = Uniform(0.7, 1.0, optguess=0.9)
 
     def __init__(
         self,
@@ -319,19 +325,23 @@ class SpotpySetup:
         self.best_objective = float("inf") if not invert_objective else float("-inf")
 
         # Get parameter names for logging
+        # Get parameter names for logging
         self.param_names = [
             "soil_params_b",
             "satpsi",
             "satdk",
             "maxsmc",
+            "refkdt",
             "expon",
             "slope",
+            "max_gw_storage",
             "K_nash_subsurface",
             "K_lf",
+            "Cgw",
             "MFSNO",
             "MP",
             "RSURF_EXP",
-            "SNOW_EMIS",
+            # "SNOW_EMIS",
             "CWP",
             "VCMX25",
             "RSURF_SNOW",
@@ -537,7 +547,10 @@ def run_spotpy(
     realization_path = Path(data_dir)/ "config" / "realization.json"
     parameters_available, parameters = parameters_available_bool(realization_path)
 
-    parameters_available = False  #forcing parameters available rn to be false, there are some issues with parameters not being in the range
+    #FIX ME: there are some issues with initial parameters (even with the case of calibrated parameters) not being in the range
+    #so for now, parameters_available is set to false to avoid using them as initial parameters for DDS algorithm. This needs to 
+    #be fixed in the future to fully utilize the benefits of DDS algorithm.
+    parameters_available = False
     # SCE hyperparameters
     if algorithm == "SCE":
         if execution_mode == "serial":
@@ -579,23 +592,26 @@ def run_spotpy(
         "satpsi": best_params_value[1],
         "satdk": best_params_value[2],
         "maxsmc": best_params_value[3],
-        "expon": best_params_value[4],
-        "slope": best_params_value[5],
-        "Kn": best_params_value[6],
-        "Klf": best_params_value[7],
-        }
+        "refkdt": best_params_value[4],
+        "expon": best_params_value[5],
+        "slope": best_params_value[6],
+        "max_gw_storage": best_params_value[7],
+        "Kn": best_params_value[8],
+        "Klf": best_params_value[9],
+        "Cgw": best_params_value[10],
+    }
     update_parameters(realization_path, param_map, "CFE")
     # Create updated NOAH parameters dictionary
     noah_param_updates = {
-        "MFSNO": best_params_value[8],  # Pass float directly
-        "MP": best_params_value[9],
-        "RSURF_EXP": best_params_value[10],
+        "MFSNO": best_params_value[11],  # Pass float directly
+        "MP": best_params_value[12],
+        "RSURF_EXP": best_params_value[13],
         # "SNOW_EMIS": best_params_value[11],
-        "CWP": best_params_value[12],
-        "VCMX25": best_params_value[13],
-        "RSURF_SNOW": best_params_value[14],
-        "SCAMAX": best_params_value[15],
-        }
+        "CWP": best_params_value[14],
+        "VCMX25": best_params_value[15],
+        "RSURF_SNOW": best_params_value[16],
+        "SCAMAX": best_params_value[17],
+    }
     update_parameters(realization_path, noah_param_updates, "NoahOWP")
 
     # # Log final best parameters
