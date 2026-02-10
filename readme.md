@@ -204,7 +204,7 @@ If Serial:
 Sorry! You were supposed to get help about: 
 mpi-abort
 ```  
-This is just a result of forcing process to end. Nothing to worry about
+This is just a consequence of using MPI.abort to end the staggering processes. Nothing to worry about!
 
 ## Monitoring Progress
 
