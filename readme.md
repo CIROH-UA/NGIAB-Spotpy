@@ -192,7 +192,7 @@ The `spotpy_results_*.csv` file contains the complete optimization history with:
 - Chain/run information
 
 ### MPI Error Code
-At the end of the print statements, either one of these statements is logged (depending on serial or parallel calibration used):  
+At the end of the calibration, either one of these statements is printed (depending on serial or parallel calibration used):  
 If Parallel:
 ```bash
 MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD 
