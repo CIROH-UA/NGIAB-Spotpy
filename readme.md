@@ -27,7 +27,7 @@ This tool performs automated calibration of the NextGen hydrologic model using S
   a. For MacOS:
    ```bash
    brew install openmpi
-   ```
+   ```  
   b. For Linux:
   ```bash
    sudo apt install openmpi-bin
