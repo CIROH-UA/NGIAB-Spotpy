@@ -18,23 +18,28 @@ This tool performs automated calibration of the NextGen hydrologic model using S
 - Python 3.8+
 - OpenMPI or MPICH
 - Docker (for NextGen model execution)
-- Required Python packages:
-  ```bash
-  pip install -r requirements.txt
-  ```
 - Superficial understanding of NGIAB_data_preprocessor workflow
 
 ## Installation
 
 1. Clone the repository and navigate to the directory
-2. Ensure OpenMPI is installed:
+2. Install OpenMPI:
+  a. For MacOS:
    ```bash
+   brew install openmpi
+   ```
+  b. For Linux:
+  ```bash
+   sudo apt install openmpi-bin
+   ```
+3. Verify OpenMPI installation:
+   ```bash 
    mpirun --version
    ```
-3. Verify mpi4py installation:
-   ```bash
-   python -c "from mpi4py import MPI; print('MPI installed successfully')"
-   ```
+4. Install required Python packages:
+  ```bash
+  pip install -r requirements.txt
+  ```
 
 ## Quick Start
 

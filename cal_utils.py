@@ -9,14 +9,13 @@ import numpy as np
 import pandas as pd
 import spotpy
 import xarray as xr
-from dataretrieval import nwis
 from spotpy.parameter import Uniform
 from tensorboardX import SummaryWriter
 import tempfile
 import yaml
 import shutil
-from mpi4py import MPI
 import matplotlib.pyplot as plt
+import mpi4py.MPI as MPI
 
 from plots import (
     create_interactive_plots,
@@ -83,23 +82,7 @@ def update_snow_emis(data_dir, value):
         file.writelines(lines)
 
 
-# === Utility Function to Retrieve and Preprocess USGS Streamflow ===
-def process_usgs_streamflow(site, start, end, output_path=None):
-    start = pd.to_datetime(start) - pd.Timedelta(days=1)
-    end = pd.to_datetime(end) + pd.Timedelta(days=1)
-    adjusted_start = start.strftime("%Y-%m-%d")
-    adjusted_end = end.strftime("%Y-%m-%d")
 
-    dfo_usgs = nwis.get_record(sites=site, service="iv", start=adjusted_start, end=adjusted_end)
-    dfo_usgs.index = pd.to_datetime(dfo_usgs.index)
-    dfo_usgs["Time"] = dfo_usgs.index.floor("h")
-    dfo_usgs["00060"] = pd.to_numeric(dfo_usgs["00060"], errors="coerce")
-    dfo_usgs_hr = dfo_usgs.groupby("Time")["00060"].mean().reset_index()
-    dfo_usgs_hr["values"] = dfo_usgs_hr["00060"] / 35.3147
-    dfo_usgs_hr = dfo_usgs_hr[["Time", "values"]]
-    if output_path:
-        dfo_usgs_hr.to_pickle(output_path)
-    return dfo_usgs_hr
 
 def parameters_available_bool(realization_path):
     '''If parameters already exist in the realization file, use them 
@@ -158,6 +141,7 @@ class NextGenSetup:
         troute_output_path,
         data_dir,
         groups,
+        merge_catchment,
         execution_mode="parallel",
     ):
         self.gage_id = gage_id
@@ -174,6 +158,7 @@ class NextGenSetup:
         self.realization_path = Path(data_dir) / "config" / "realization.json"
         self.data_dir = data_dir
         self.groups = groups
+        self.merge_catchment = merge_catchment
         self.execution_mode = execution_mode
 
     def write_config(self, realization_path_name, params):
@@ -211,9 +196,12 @@ class NextGenSetup:
         # update_snow_emis(self.data_dir, params[11])
 
 
-    def run_model(self, gage_id, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir, groups):
+    def run_model(self, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir, groups):
         #running nextgen simulation ro get lateral flows
-        gpkg_path = Path("/ngen/ngen/data/config/merged.gpkg") 
+        if self.merge_catchment:
+            gpkg_path = Path("/ngen/ngen/data/config/merged.gpkg")
+        else:
+            gpkg_path = Path("/ngen/ngen/data/config") / f"{Path(self.data_dir).name}_subset.gpkg"
         try:
             if self.execution_mode == "serial":
                 cmd_base = f"docker run --entrypoint mpirun -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image /dmod/bin/ngen-parallel"
@@ -229,23 +217,24 @@ class NextGenSetup:
         except:
             raise RuntimeError("Next Gen Simulation failed.")
         
-        #create symbolic link for actual lateral files to merged lateral files
 
-        #create a merged directory inside temp_ngen_output_dir
-        merged_lateral_dir = os.path.join(temp_ngen_output_dir, "merged")
-        os.makedirs(merged_lateral_dir, exist_ok=True)
-        #mv onlyfiles from temp_ngen_directory to merged directory
-        os.system(f"mv {temp_ngen_output_dir}/cat-*.csv {merged_lateral_dir}/")
+        if self.merge_catchment:
+            #create symbolic link for actual lateral files to merged lateral files if merged catchment is true
+            #create a merged directory inside temp_ngen_output_dir
+            merged_lateral_dir = os.path.join(temp_ngen_output_dir, "merged")
+            os.makedirs(merged_lateral_dir, exist_ok=True)
+            #mv onlyfiles from temp_ngen_directory to merged directory
+            os.system(f"mv {temp_ngen_output_dir}/cat-*.csv {merged_lateral_dir}/")
 
-        #groups is a list of list, each sublist contains cat ids that were used to create a merged lateral file
-        #so, a symbolic link must be created for each cat-id in the sublist to point to the merged lateral file
-        merged_files = Path(merged_lateral_dir).glob("cat-*")
+            #groups is a list of list, each sublist contains cat ids that were used to create a merged lateral file
+            #so, a symbolic link must be created for each cat-id in the sublist to point to the merged lateral file
+            merged_files = Path(merged_lateral_dir).glob("cat-*")
 
-        sub_list_counter = 0
-        for merged_file in merged_files:
-            for cat_id in groups[sub_list_counter]:
-                os.system(f"ln -s /ngen/ngen/data/outputs/ngen/{os.path.basename(temp_ngen_output_dir)}/merged/{merged_file.name} {temp_ngen_output_dir}/cat-{cat_id}.csv")
-            sub_list_counter += 1
+            sub_list_counter = 0
+            for merged_file in merged_files:
+                for cat_id in groups[sub_list_counter]:
+                    os.system(f"ln -s /ngen/ngen/data/outputs/ngen/{os.path.basename(temp_ngen_output_dir)}/merged/{merged_file.name} {temp_ngen_output_dir}/cat-{cat_id}.csv")
+                sub_list_counter += 1
 
         #running troute simulation to get streamflow
         try:
@@ -270,10 +259,6 @@ class NextGenSetup:
         actual_start = min(self.training_start_date, self.observed.index[0])
         simulated = simulated[ds["time"] >= actual_start]
         simulated = simulated[: len(self.observed) - 1]
-        # plt.plot([i for i in range(len(simulated))], simulated, label="Simulated")
-        # plt.plot([i for i in range(len(self.observed)-1)], self.observed.values.squeeze()[1:], label="Observed")
-        # plt.legend()
-        # plt.savefig(temp_troute_output_dir + "/sim_vs_obs.png")
         shutil.rmtree(temp_troute_output_dir)
         return simulated
 
@@ -381,7 +366,7 @@ class SpotpySetup:
         update_output_path(temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir)
 
         self.model.write_config(temp_file_realization_name, vector)
-        self.model.run_model(self.model.gage_id, temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir, self.model.groups)
+        self.model.run_model(temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir, self.model.groups)
         return self.model.evaluate(temp_troute_output_dir,self.feature_id)
 
     def evaluation(self):
@@ -483,9 +468,11 @@ def run_spotpy(
     troute_output_path,
     data_dir,
     feature_id,
+    rank,
     algorithm,
     objective_function,
     groups,
+    merge_catchment,
     repetitions=25,
     dds_trials=5,
     execution_mode="parallel",
@@ -502,6 +489,7 @@ def run_spotpy(
         troute_output_path,
         data_dir,
         groups,
+        merge_catchment=merge_catchment,
         execution_mode=execution_mode,
     )
 
@@ -519,12 +507,19 @@ def run_spotpy(
 
     invert_objective = best_is_higher != algorithm_maximizes
 
-    # Set up TensorBoard writer
+
     if tensorboard_logdir is None:
         tensorboard_logdir = f"{data_dir}/tensorboard_logs"
-
     run_name = f"{algorithm}_{objective_function}_{gage_id}_2017_10_02"
-    writer = SummaryWriter(log_dir=f"{tensorboard_logdir}/{run_name}")
+    run_log_dir = f"{tensorboard_logdir}/{run_name}"
+    writer = None
+    # Only let rank 0 create and own the TensorBoard writer.
+    if rank == 0:
+        os.makedirs(run_log_dir, exist_ok=True)
+        writer = SummaryWriter(log_dir=run_log_dir)
+
+    # Ensure rank 0 creates the run directory before workers proceed.
+    MPI.COMM_WORLD.Barrier()
 
     # Log hyperparameters
     hparams = {
@@ -570,7 +565,6 @@ def run_spotpy(
             #realization file doesn't have snow emis
             parameters.insert(11, np.random.uniform(0.90, 1.0))
             parameters = np.array(parameters)
-            breakpoint()
             sampler.sample(repetitions, trials=int(dds_trials), x_initial=parameters)
         else:
             sampler.sample(repetitions, trials=int(dds_trials))
@@ -615,11 +609,11 @@ def run_spotpy(
     update_parameters(realization_path, noah_param_updates, "NoahOWP")
 
     # # Log final best parameters
-    for i, param_name in enumerate(optimizer.param_names):
-        if i < len(best_params[0]):
-            writer.add_scalar(f"FinalBestParameters/{param_name}", best_params[0][i], 0)
-    # Close TensorBoard writer
-    writer.close()
+    if writer:
+        for i, param_name in enumerate(optimizer.param_names):
+            if i < len(best_params[0]):
+                writer.add_scalar(f"FinalBestParameters/{param_name}", best_params[0][i], 0)
+        writer.close()
 
     # # Generate standard plots
     plot_results(results, optimizer.evaluation(), f"{data_dir}/spotpy/plots")

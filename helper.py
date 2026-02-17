@@ -5,6 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from merge_catchment.geopackage import GeoPackage
 from merge_catchment.interface import *
+from dataretrieval import nwis
+import pandas as pd
 
 def get_troute_output_name(path):
     with open(path, "r") as file:
@@ -15,7 +17,7 @@ def get_troute_output_name(path):
 
 def prepare_config_merged_simulation(realization_path, troute_path):
     '''This function prepares the realization_file and t-route file
-    for merged catchment simulation.'''
+    s.t. ngen and routing is done seperately'''
 
     print("Preparing configuration files for merged geopackage simulation...")
     #removing routing parameter from the realization file
@@ -118,22 +120,23 @@ def merge_and_prepare_forcing(data_dir, execution_mode):
 
     return groups
 
-def restore_data_dir(data_dir):
+def restore_data_dir(data_dir, merge_catchment):
     '''Removes merged geopackage,forcing data prepared for merged geopackage simulation. And removes 
     extra tmp yaml and json files created by staggering multiprocessing calibration. Also removes partiton files.'''
 
-    print("Removing merged geopackage and forcing data used for merged geopackage simulation...")
     folder = Path(data_dir)
-    merged_geopackage = folder / "config" / "merged.gpkg"
-    forcing_path = folder / "forcings"/ "forcings.nc"
+    if merge_catchment:
+        print("Removing merged geopackage and forcing data used for merged geopackage simulation...")
+        merged_geopackage = folder / "config" / "merged.gpkg"
+        forcing_path = folder / "forcings"/ "forcings.nc"
 
-    if merged_geopackage.exists():
-        merged_geopackage.unlink()
-    if forcing_path.exists():
-        forcing_path.unlink()
-    
-    #move original forcing file back to forcings directory
-    os.system(f"mv {folder}/forcings.nc {forcing_path}")
+        if merged_geopackage.exists():
+            merged_geopackage.unlink()
+        if forcing_path.exists():
+            forcing_path.unlink()
+        
+        #move original forcing file back to forcings directory
+        os.system(f"mv {folder}/forcings.nc {forcing_path}")
 
     #remove extra tmp yaml and json files created by staggering multiprocessing calibration
     tmp_files = list(folder.glob("config/tmp*"))
@@ -150,3 +153,23 @@ def get_feature_id(data_dir):
         cmd = f"SELECT id FROM 'flowpath-attributes' WHERE gage='{folder.name.replace('gage-', '')}'"
         results = conn.execute(cmd).fetchall()
         return results[0][0].split("-")[1]
+    
+# === Utility Function to Retrieve and Preprocess USGS Streamflow ===
+def process_usgs_streamflow(site, start, end, output_path=None):
+    start = pd.to_datetime(start) - pd.Timedelta(days=1)
+    end = pd.to_datetime(end) + pd.Timedelta(days=1)
+    adjusted_start = start.strftime("%Y-%m-%d")
+    adjusted_end = end.strftime("%Y-%m-%d")
+
+    dfo_usgs = nwis.get_record(sites=site, service="iv", start=adjusted_start, end=adjusted_end)
+    dfo_usgs.index = pd.to_datetime(dfo_usgs.index)
+    dfo_usgs["Time"] = dfo_usgs.index.floor("h")
+    dfo_usgs["00060"] = pd.to_numeric(dfo_usgs["00060"], errors="coerce")
+    dfo_usgs_hr = dfo_usgs.groupby("Time")["00060"].mean().reset_index()
+    dfo_usgs_hr["values"] = dfo_usgs_hr["00060"] / 35.3147
+    dfo_usgs_hr = dfo_usgs_hr[["Time", "values"]]
+    #interpolate missing values
+    dfo_usgs_hr["values"] = dfo_usgs_hr["values"].interpolate(method='linear')
+    if output_path:
+        dfo_usgs_hr.to_pickle(output_path)
+    return dfo_usgs_hr

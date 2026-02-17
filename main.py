@@ -1,8 +1,19 @@
 from mpi4py import MPI
 import argparse
 from pathlib import Path
-from cal_utils import process_usgs_streamflow, run_spotpy
+from cal_utils import run_spotpy
 from helper import *
+
+
+def str_to_bool(value):
+    if isinstance(value, bool):
+        return value
+    if value.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif value.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected.")
 
 def main():
     parser = argparse.ArgumentParser(description="Run SPOTPY calibration for NextGen hydrologic model")
@@ -18,10 +29,12 @@ def main():
     parser.add_argument("--algorithm", type=str, default="DDS", choices=["SCE", "DDS"], help="Optimization algorithm")
     parser.add_argument("--objective_function", type=str, default="KGE", choices=["KGE", "RMSE"], help="Objective function")
     parser.add_argument("--repetitions", type=int, default=100, help="Number of repetitions/iterations")
-    parser.add_argument("--dds_trials", type=int, default=2, help="DDS trials (only used if algorithm=DDS)")
+    parser.add_argument("--dds_trials", type=int, default=1, help="DDS trials (only used if algorithm=DDS)")
     parser.add_argument("--execution_mode", type=str, default="parallel", choices=["serial", "parallel"], help="Serial or parallel execution")
+    parser.add_argument("--merge_catchment", type=str, default=True, help="Whether to merge catchments for calibration")
     
     args = parser.parse_args()
+    args.merge_catchment = str_to_bool(args.merge_catchment)
  
     # Setup paths
     realization_path = f"{args.data_root}/gage-{args.gage_id}/config/realization.json"
@@ -61,7 +74,8 @@ def main():
         if rank == 0:
             print_calibration_configuration(args=args, size=size)
             prepare_config_merged_simulation(realization_path=realization_path, troute_path=troute_path)
-            groups = merge_and_prepare_forcing(data_dir=data_dir, execution_mode=args.execution_mode)
+            if args.merge_catchment:
+                groups = merge_and_prepare_forcing(data_dir=data_dir, execution_mode=args.execution_mode)
 
         # Synchronize all processes
         comm.Barrier()
@@ -78,9 +92,11 @@ def main():
             troute_output_path,
             data_dir,
             feature_id,
+            rank,
             algorithm=args.algorithm,
             objective_function=args.objective_function,
             groups=groups,
+            merge_catchment=args.merge_catchment,
             repetitions=args.repetitions,
             dds_trials=args.dds_trials,
             execution_mode=args.execution_mode,
@@ -104,7 +120,7 @@ def main():
             print(f"\nTo view TensorBoard results, run:")
             print(f"tensorboard --logdir={tensorboard_logdir}")
             print(f"{'='*60}\n")
-            restore_data_dir(data_dir=data_dir)
+            restore_data_dir(data_dir=data_dir, merge_catchment=args.merge_catchment)
             #stops all other ongoing processes
             MPI.COMM_WORLD.Abort(0)
             
