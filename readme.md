@@ -246,9 +246,8 @@ mpirun -n 20 --oversubscribe python -u main.py [arguments]
 **Symptoms:** Calibration starts but never finishes
 
 **Solutions:**
-1. Check if Docker is running: `docker ps`
-2. Check process tracking files to see where it stopped
-3. Run with tagged output for debugging:
+1. Check if Docker is running: `docker run hello-world`. If there are any errors (specifically related to docker permission error), follow this post-installation docker steps provided in this link: https://docs.docker.com/engine/install/linux-postinstall/
+2. Run with tagged output for debugging:
    ```bash
    mpirun -n 5 --tag-output python main.py [arguments] 2>&1 | tee debug.log
    ```

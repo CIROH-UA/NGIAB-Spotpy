@@ -207,16 +207,16 @@ class NextGenSetup:
             gpkg_path = Path("/ngen/ngen/data/config") / f"{Path(self.data_dir).name}_subset.gpkg"
         try:
             if self.execution_mode == "serial":
-                cmd_base = f"docker run --entrypoint mpirun -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image /dmod/bin/ngen-parallel"
+                cmd_base = f"docker run --rm --entrypoint mpirun -w /ngen/ngen/data  -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image /dmod/bin/ngen-parallel"
                 ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
                 print(cmd_base + ngen_cmd)
-                subprocess.call(cmd_base + ngen_cmd, shell=True)
+                subprocess.run(cmd_base + ngen_cmd, shell=True, stdout=subprocess.DEVNULL)
 
             else:
-                cmd_base = f"docker run --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
+                cmd_base = f"docker run --rm --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
                 ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
                 print(cmd_base + ngen_cmd)               
-                subprocess.call(cmd_base + ngen_cmd, shell=True)
+                subprocess.run(cmd_base + ngen_cmd, shell=True, stdout=subprocess.DEVNULL)
         except:
             raise RuntimeError("Next Gen Simulation failed.")
         
