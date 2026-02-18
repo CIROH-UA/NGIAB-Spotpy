@@ -106,14 +106,18 @@ def parameters_available_bool(realization_path):
                     break
 
     if parameters_available:
-        param_names = ["b",
+        param_names = [
+            "b",
             "satpsi",
             "satdk",
             "maxsmc",
+            "refkdt",
             "expon",
             "slope",
+            "max_gw_storage",
             "Kn",
             "Klf",
+            "Cgw",
             "MFSNO",
             "MP",
             "RSURF_EXP",
@@ -185,7 +189,6 @@ class NextGenSetup:
             "MFSNO": params[11],  # Pass float directly
             "MP": params[12],
             "RSURF_EXP": params[13],
-            # "SNOW_EMIS": params[11],
             "CWP": params[14],
             "VCMX25": params[15],
             "RSURF_SNOW": params[16],
@@ -542,10 +545,11 @@ def run_spotpy(
     realization_path = Path(data_dir)/ "config" / "realization.json"
     parameters_available, parameters = parameters_available_bool(realization_path)
 
+    parameters_available = False
     #FIX ME: there are some issues with initial parameters (even with the case of calibrated parameters) not being in the range
     #so for now, parameters_available is set to false to avoid using them as initial parameters for DDS algorithm. This needs to 
     #be fixed in the future to fully utilize the benefits of DDS algorithm.
-    parameters_available = False
+    # parameters_available = False
     # SCE hyperparameters
     if algorithm == "SCE":
         if execution_mode == "serial":
@@ -562,8 +566,6 @@ def run_spotpy(
             sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv", parallel="mpi")
 
         if parameters_available:
-            #realization file doesn't have snow emis
-            parameters.insert(11, np.random.uniform(0.90, 1.0))
             parameters = np.array(parameters)
             sampler.sample(repetitions, trials=int(dds_trials), x_initial=parameters)
         else:
@@ -600,7 +602,6 @@ def run_spotpy(
         "MFSNO": best_params_value[11],  # Pass float directly
         "MP": best_params_value[12],
         "RSURF_EXP": best_params_value[13],
-        # "SNOW_EMIS": best_params_value[11],
         "CWP": best_params_value[14],
         "VCMX25": best_params_value[15],
         "RSURF_SNOW": best_params_value[16],

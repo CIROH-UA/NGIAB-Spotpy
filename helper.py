@@ -125,15 +125,19 @@ def restore_data_dir(data_dir, merge_catchment):
     extra tmp yaml and json files created by staggering multiprocessing calibration. Also removes partiton files.'''
 
     folder = Path(data_dir)
+    #instead of removing merged geopackage and forcing, create an archive directory and move those files there. 
     if merge_catchment:
-        print("Removing merged geopackage and forcing data used for merged geopackage simulation...")
+        print("Moving merged geopackage and forcing data used to archive...")
         merged_geopackage = folder / "config" / "merged.gpkg"
         forcing_path = folder / "forcings"/ "forcings.nc"
 
+        archive_dir = folder / "archive"
+        archive_dir.mkdir(exist_ok=True)
+
         if merged_geopackage.exists():
-            merged_geopackage.unlink()
+            os.system(f"mv {merged_geopackage} {archive_dir}")
         if forcing_path.exists():
-            forcing_path.unlink()
+            os.system(f"mv {forcing_path} {archive_dir}")
         
         #move original forcing file back to forcings directory
         os.system(f"mv {folder}/forcings.nc {forcing_path}")
