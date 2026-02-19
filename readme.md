@@ -80,7 +80,6 @@ mpirun -n 11 --oversubscribe python -u main.py \
 | Argument | Type | Description | Example |
 |----------|------|-------------|---------|
 | `--gage_id` | string | USGS gage station ID | `10109001` |
-| `--feature_id` | integer | Feature ID for routing in the model | `2861391` |
 | `--start_date` | string | Simulation start date (YYYY-MM-DD) | `2015-10-01` |
 | `--end_date` | string | Simulation end date (YYYY-MM-DD) | `2019-12-01` |
 | `--training_start_date` | string | Date to begin calibration (YYYY-MM-DD) | `2017-10-02` |
@@ -93,7 +92,7 @@ mpirun -n 11 --oversubscribe python -u main.py \
 | `--algorithm` | string | `SCE` | `SCE`, `DDS` | Optimization algorithm to use |
 | `--objective_function` | string | `KGE` | `KGE`, `RMSE` | Objective function for calibration |
 | `--repetitions` | integer | `10` | Any positive integer | Number of calibration iterations |
-| `--dds_trials` | integer | `5` | Any positive integer | Number of trials for DDS algorithm (only used when `--algorithm DDS`) |
+| `--dds_trials` | integer | `1` | Any positive integer | Number of trials for DDS algorithm (only used when `--algorithm DDS`) |
 | `--execution_mode` | string | `parallel` | `serial`, `parallel` | Whether to run in serial or parallel mode |
 
 ### Help
@@ -282,6 +281,10 @@ Check USGS data availability: https://waterdata.usgs.gov/nwis
    docker run --rm -it -v "/path/to/data:/ngen/ngen/data" joshcu/ngiab:fast_cal ls /ngen/ngen/data
    ```
 
+## Workflow
+**Parallel Calibration Workflow**
+
+
 ## Additional Notes
 
 
@@ -289,7 +292,6 @@ Check USGS data availability: https://waterdata.usgs.gov/nwis
 - **SCE-UA**: Shuffled Complex Evolution
   - More thorough global search
   - Better for complex parameter spaces
-  - Recommended for initial calibrations
   
 - **DDS**: Dynamically Dimensioned Search
   - Faster convergence
