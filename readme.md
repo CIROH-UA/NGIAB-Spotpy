@@ -273,14 +273,8 @@ Check USGS data availability: https://waterdata.usgs.gov/nwis
 
 **Solutions:**
 1. Verify Docker image exists:
-   `docker images | grep joshcu/ngiab`
    `docker images | grep awiciroh/ciroh-ngen-image`
-3. Check Docker is running: `sudo systemctl status docker`
-4. Ensure data directory is accessible: Check permissions on `data_root`
-5. Test Docker manually:
-   ```bash
-   docker run --rm -it -v "/path/to/data:/ngen/ngen/data" joshcu/ngiab:fast_cal ls /ngen/ngen/data
-   ```
+2. Ensure data directory is accessible: Check permissions on `data_root`
 
 ## Workflow
 
