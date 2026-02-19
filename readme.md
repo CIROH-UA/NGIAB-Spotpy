@@ -12,6 +12,7 @@ This tool performs automated calibration of the NextGen hydrologic model using S
 - [Understanding the Output](#understanding-the-output)
 - [Monitoring Progress](#monitoring-progress)
 - [Troubleshooting](#troubleshooting)
+- [Workflow](#workflow)
 
 ## Prerequisites
 
@@ -37,9 +38,9 @@ This tool performs automated calibration of the NextGen hydrologic model using S
    mpirun --version
    ```
 4. Install required Python packages:
-  ```bash
-  pip install -r requirements.txt
-  ```
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 ## Quick Start
 
@@ -282,8 +283,11 @@ Check USGS data availability: https://waterdata.usgs.gov/nwis
    ```
 
 ## Workflow
-**Parallel Calibration Workflow**
+**Parallel Calibration**
+![Parallel Calibration](workflow/parallel_calibration.png)
 
+**Simulation and Evaluation**
+![Sim and Eval](workflow/sim_and_eval.png)
 
 ## Additional Notes
 
