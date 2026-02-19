@@ -284,10 +284,10 @@ Check USGS data availability: https://waterdata.usgs.gov/nwis
 
 ## Workflow
 **Parallel Calibration**
-![Parallel Calibration](workflow/parallel_calibration.png)
+<img src="workflow/parallel_calibration.png" width="500" height="400">
 
 **Simulation and Evaluation**
-![Sim and Eval](workflow/sim_and_eval.png)
+<img src="workflow/sim_and_eval.png" width="500" height="400">
 
 ## Additional Notes
 
