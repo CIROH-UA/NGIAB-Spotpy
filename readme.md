@@ -155,7 +155,6 @@ mpirun -n 6 --oversubscribe python main.py \
 ```bash
 python main.py \
     --gage_id 10109001 \
-    --feature_id 2861391 \
     --start_date 2015-10-01 \
     --end_date 2019-12-01 \
     --training_start_date 2017-10-02 \
