@@ -210,44 +210,47 @@ class NextGenSetup:
                 cmd_base = f"docker run --rm --entrypoint mpirun -w /ngen/ngen/data  -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image /dmod/bin/ngen-parallel"
                 ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
                 print(cmd_base + ngen_cmd)
-                subprocess.run(cmd_base + ngen_cmd, shell=True, stdout=subprocess.DEVNULL)
+                subprocess.call(cmd_base + ngen_cmd, shell=True)
 
             else:
                 cmd_base = f"docker run --rm --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
                 ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
                 print(cmd_base + ngen_cmd)               
-                subprocess.run(cmd_base + ngen_cmd, shell=True, stdout=subprocess.DEVNULL)
+                subprocess.call(cmd_base + ngen_cmd, shell=True)
         except:
             raise RuntimeError("Next Gen Simulation failed.")
         
+        # MPI.COMM_WORLD.barrier()
+        print("All processes completed ngen simulation.")
 
         if self.merge_catchment:
             #create symbolic link for actual lateral files to merged lateral files if merged catchment is true
             #create a merged directory inside temp_ngen_output_dir
             merged_lateral_dir = os.path.join(temp_ngen_output_dir, "merged")
             os.makedirs(merged_lateral_dir, exist_ok=True)
-            #mv onlyfiles from temp_ngen_directory to merged directory
+            #mv lat files from temp_ngen_directory to merged directory
             os.system(f"mv {temp_ngen_output_dir}/cat-*.csv {merged_lateral_dir}/")
 
-            #groups is a list of list, each sublist contains cat ids that were used to create a merged lateral file
-            #so, a symbolic link must be created for each cat-id in the sublist to point to the merged lateral file
-            merged_files = Path(merged_lateral_dir).glob("cat-*")
-
-            sub_list_counter = 0
-            for merged_file in merged_files:
-                for cat_id in groups[sub_list_counter]:
-                    os.system(f"ln -s /ngen/ngen/data/outputs/ngen/{os.path.basename(temp_ngen_output_dir)}/merged/{merged_file.name} {temp_ngen_output_dir}/cat-{cat_id}.csv")
-                sub_list_counter += 1
+            # groups[i] maps to merged/cat-i.csv by construction.
+            for i, cat_ids in enumerate(groups):
+                merged_file_name = f"cat-{i}.csv"
+                for cat_id in cat_ids:
+                    os.system(
+                        f"ln -sf {temp_ngen_output_dir}/merged/{merged_file_name} "
+                        f"{temp_ngen_output_dir}/cat-{cat_id}.csv"
+                    )
 
         #running troute simulation to get streamflow
         try:
-            cmd = f"docker run --entrypoint python -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image -m nwm_routing -f /ngen/ngen/data/config/{os.path.basename(troute_yaml)}"
+            cmd = f"route_rs {self.data_dir} {Path(self.data_dir) / "config" / f"{Path(self.data_dir).name}_subset.gpkg"} {temp_ngen_output_dir} {temp_troute_output_dir} --num-threads 31"
             subprocess.call(cmd, shell=True)
         except:
             raise RuntimeError("T-route run failed.")
-
+        rank = MPI.COMM_WORLD.rank
+        print(f"Rank {rank} completed troute simulation.")
         self.troute_output_path = os.path.join(temp_troute_output_dir, os.path.basename(self.troute_output_path))
         if not os.path.exists(self.troute_output_path):
+            print(f"Rank {rank} doesn't have troute output file. ####")
             raise RuntimeError("Nextgen Run failed. Couldn't find troute file.")
         else:
             print("Nextgen run complete.")
@@ -342,6 +345,7 @@ class SpotpySetup:
 
     def simulation(self, vector):
         self.current_params = vector
+        rank = MPI.COMM_WORLD.rank
         #cerate a temporary copy of realization file and yaml file for each process
         realization_path = Path(self.data_dir)/ "config" / "realization.json"
         with open(realization_path, 'r') as f:
@@ -349,7 +353,7 @@ class SpotpySetup:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, dir = os.path.join(self.data_dir, "config")) as temp_file_realization:
             json.dump(data, temp_file_realization, indent=4, ensure_ascii=False)
             temp_file_realization_name = temp_file_realization.name
-            print(f"Temporary file created: {temp_file_realization_name}")
+            print(f"Temporary file created: {temp_file_realization_name} by rank {rank}")
 
         troute_config_path = Path(self.data_dir) / "config" / "troute.yaml"
         with open(troute_config_path, 'r') as f:
@@ -357,14 +361,14 @@ class SpotpySetup:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, dir = os.path.join(self.data_dir, "config")) as temp_file_yaml:
             yaml.dump(data, temp_file_yaml)
             temp_file_yaml_name = temp_file_yaml.name
-            print(f"Temporary YAML file created: {temp_file_yaml_name}")
+            print(f"Temporary YAML file created: {temp_file_yaml_name} by rank {rank}")
 
         #create temporary output directories for ngen and troute for each process
         temp_ngen_output_dir = tempfile.mkdtemp(dir = os.path.join(self.data_dir, "outputs/ngen"))
         temp_troute_output_dir = tempfile.mkdtemp(dir = os.path.join(self.data_dir, "outputs/troute"))
 
-        print(f"Temporary Nextgen output directory: {temp_ngen_output_dir}")
-        print(f"Temporary T-route output directory: {temp_troute_output_dir}")
+        print(f"Temporary Nextgen output directory: {temp_ngen_output_dir} by rank {rank}")
+        print(f"Temporary T-route output directory: {temp_troute_output_dir} by rank {rank}")
 
         update_output_path(temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir)
 
