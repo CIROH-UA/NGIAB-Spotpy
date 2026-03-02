@@ -1,11 +1,13 @@
 # NextGen Hydrologic Model Calibration
 
-This tool performs automated calibration of the NextGen hydrologic model using SPOTPY optimization algorithms with MPI parallelization support.
+This project calibrates NextGen model parameters with SPOTPY and supports both serial and MPI-parallel execution.
 
 ## Table of Contents
 
+- [What This Does](#what-this-does)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Expected Data Layout](#expected-data-layout)
 - [Quick Start](#quick-start)
 - [Command Line Arguments](#command-line-arguments)
 - [Execution Modes](#execution-modes)
@@ -17,43 +19,88 @@ This tool performs automated calibration of the NextGen hydrologic model using S
 - [Additional Notes](#additional-notes)
 - [Support](#support)
 
+## What This Does
+
+At a high level, calibration means searching for parameter values that make simulated streamflow match observed streamflow.
+
+This code:
+
+1. Reads model/domain data under `data_root/gage-{gage_id}`.
+2. Loads or downloads observed USGS flow for your date range.
+3. Runs SPOTPY optimization (`SCE` or `DDS`) against an objective function (`KGE` or `RMSE`).
+4. Writes the best parameter set and full optimization history to disk.
+
 ## Prerequisites
 
 - Python 3.8+
 - OpenMPI or MPICH
-- Docker (for NextGen model execution)
-- Superficial understanding of NGIAB_data_preprocessor workflow
+- Rust + Cargo (used to install routing dependency)
+- Docker (used by model execution)
+- Basic familiarity with `ngiab_data_preprocess`
 
 ## Installation
 
-1. Clone the repository and navigate to the directory.
-2. Install OpenMPI:
-   - For macOS:
+1. Clone the repository and enter it.
+2. Install OpenMPI.
+   - macOS:
      ```bash
      brew install openmpi
      ```
-   - For Linux:
+   - Linux:
      ```bash
      sudo apt install openmpi-bin
      ```
-3. Verify OpenMPI installation:
+3. Verify MPI:
    ```bash
    mpirun --version
    ```
-4. Install required Python packages:
+4. Install Rust/Cargo and the routing package:
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source ~/.cargo/env
+   rustup update stable
+   cargo --version
+   cargo install --git https://github.com/slama0077/route_rs.git --branch Calibration
+   ```
+5. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
+## Expected Data Layout
+
+Before running calibration, `data_root` should contain a folder for your gage:
+
+```text
+{data_root}/
+└── gage-{gage_id}/
+    ├── config/
+    │   ├── realization.json
+    │   └── troute.yaml
+    └── outputs/
+```
+
+`data_root` is the parent directory, not the gage folder itself.
+
+Example:
+
+- If your files are in `/tmp/ngen/gage-10109001/config/realization.json`, then `--data_root` should be `/tmp/ngen`.
+
 ## Quick Start
 
-**Prepare data:**
+### 1) Prepare data
 
 ```bash
 uvx --from ngiab_data_preprocess cli -i gage-10109001 -sfr --start 2015-10-01 --end 2019-12-01
 ```
 
-**Serial execution (single process):**
+If you are unsure where the generated data lives, check:
+
+```bash
+cat ~/.ngiab/
+```
+
+### 2) Run serial mode (debug/validation)
 
 ```bash
 python -u main.py \
@@ -61,11 +108,11 @@ python -u main.py \
     --start_date 2015-10-01 \
     --end_date 2019-12-01 \
     --training_start_date 2017-10-02 \
-    --data_root /path/to/your/data \
+    --data_root /path/to/data_root \
     --execution_mode serial
 ```
 
-**Parallel execution (recommended for faster calibration):**
+### 3) Run parallel mode (recommended for speed)
 
 ```bash
 mpirun -n 11 --oversubscribe python -u main.py \
@@ -73,13 +120,11 @@ mpirun -n 11 --oversubscribe python -u main.py \
     --start_date 2015-10-01 \
     --end_date 2019-12-01 \
     --training_start_date 2017-10-02 \
-    --data_root /path/to/your/data \
+    --data_root /path/to/data_root \
     --execution_mode parallel
 ```
 
-> If you have trouble finding `data_root`, run `cat ~/.ngiab/`.
-
-**Note:** The `-u` flag forces unbuffered I/O, which helps output appear immediately. This is useful for debugging because prints follow execution order. It can be removed later when `docker run` output is suppressed.
+The `-u` flag forces unbuffered output, which helps when you are watching logs live.
 
 ## Command Line Arguments
 
@@ -87,25 +132,31 @@ mpirun -n 11 --oversubscribe python -u main.py \
 
 | Argument | Type | Description | Example |
 | --- | --- | --- | --- |
-| `--gage_id` | string | USGS gage station ID | `10109001` |
-| `--start_date` | string | Simulation start date (YYYY-MM-DD) | `2015-10-01` |
-| `--end_date` | string | Simulation end date (YYYY-MM-DD) | `2019-12-01` |
-| `--training_start_date` | string | Date to begin calibration (YYYY-MM-DD) | `2017-10-02` |
-| `--data_root` | string | Root directory containing model data | `/home/user/data` |
+| `--gage_id` | string | USGS gage ID used for observed flow retrieval and folder naming | `10109001` |
+| `--start_date` | string | Full simulation start date (`YYYY-MM-DD`) | `2015-10-01` |
+| `--end_date` | string | Full simulation end date (`YYYY-MM-DD`) | `2019-12-01` |
+| `--training_start_date` | string | Start of the calibration/evaluation window inside the simulation period | `2017-10-02` |
+| `--data_root` | string | Parent folder containing `gage-{gage_id}` | `/home/user/data` |
 
 ### Optional Arguments
 
 | Argument | Type | Default | Options | Description |
 | --- | --- | --- | --- | --- |
-| `--algorithm` | string | `SCE` | `SCE`, `DDS` | Optimization algorithm to use |
-| `--objective_function` | string | `KGE` | `KGE`, `RMSE` | Objective function for calibration |
-| `--repetitions` | integer | `10` | Any positive integer | Number of calibration iterations |
-| `--dds_trials` | integer | `1` | Any positive integer | Number of trials for DDS algorithm (only used when `--algorithm DDS`) |
-| `--execution_mode` | string | `parallel` | `serial`, `parallel` | Whether to run in serial or parallel mode |
+| `--algorithm` | string | `DDS` | `SCE`, `DDS` | Search algorithm used by SPOTPY |
+| `--objective_function` | string | `KGE` | `KGE`, `RMSE` | Metric used to score each parameter set |
+| `--repetitions` | integer | `100` | positive integer | Number of optimization iterations |
+| `--dds_trials` | integer | `1` | positive integer | DDS restart trials (used only when `--algorithm DDS`) |
+| `--execution_mode` | string | `parallel` | `serial`, `parallel` | Controls MPI behavior |
+| `--merge_catchment` | bool-like string | `True` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
+
+### Argument Notes
+
+- `start_date` to `end_date` defines the simulation span.
+- `training_start_date` to `end_date` defines the objective-function evaluation window.
+- For DDS, increasing `dds_trials` can improve exploration but increases runtime.
+- Higher `repetitions` usually improves calibration quality but increases runtime linearly.
 
 ### Help
-
-View all available options:
 
 ```bash
 python main.py --help
@@ -115,27 +166,24 @@ python main.py --help
 
 ### Serial Mode
 
-- Runs calibration using a single process.
-- Runs ngen simulation in parallel.
-- Use when testing or debugging.
-- Command: `python main.py [arguments] --execution_mode serial`
+- Runs with one process (no MPI worker pool).
+- Best for debugging and first-run validation.
+- Command pattern:
+  `python main.py ... --execution_mode serial`
 
-### Parallel Mode (Recommended)
+### Parallel Mode
 
-- Runs calibration using multiple MPI processes.
-- Runs ngen simulation in serial.
-- Faster for complex calibrations (scales better than calibration in serial and ngen in parallel).
-- Requires `mpirun`.
-- Important: when using MPI, rank 0 acts as the master coordinator and does not run simulations.
-  - If you want `N` parallel simulations, use `mpirun -n N+1`.
-  - Example: For 10 parallel simulations, use `mpirun -n 11`.
+- Runs with MPI workers for faster calibration.
+- Rank 0 is coordinator; worker ranks execute simulations.
+- If you need `N` worker simulations, use `mpirun -n N+1`.
+  - Example: 10 workers -> `mpirun -n 11`.
 
 ## Usage Examples
 
-### Example 1: Basic parallel calibration with SCE algorithm
+### Example 1: Parallel SCE + KGE
 
 ```bash
-mpirun -n 11 --oversubscribe python main.py \
+mpirun -n 11 --oversubscribe python -u main.py \
     --gage_id 10109001 \
     --start_date 2015-10-01 \
     --end_date 2019-12-01 \
@@ -147,10 +195,10 @@ mpirun -n 11 --oversubscribe python main.py \
     --execution_mode parallel
 ```
 
-### Example 2: Calibration with DDS algorithm
+### Example 2: Parallel DDS + RMSE
 
 ```bash
-mpirun -n 6 --oversubscribe python main.py \
+mpirun -n 6 --oversubscribe python -u main.py \
     --gage_id 10109001 \
     --start_date 2015-10-01 \
     --end_date 2019-12-01 \
@@ -163,10 +211,10 @@ mpirun -n 6 --oversubscribe python main.py \
     --execution_mode parallel
 ```
 
-### Example 3: Serial execution for testing
+### Example 3: Serial SCE
 
 ```bash
-python main.py \
+python -u main.py \
     --gage_id 10109001 \
     --start_date 2015-10-01 \
     --end_date 2019-12-01 \
@@ -181,79 +229,47 @@ python main.py \
 
 ### Directory Structure
 
-After calibration completes, you'll find these outputs in your data directory:
-
 ```text
 data_root/gage-{gage_id}/
 ├── spotpy/
 │   ├── best_params.csv              # Best calibrated parameters
-│   ├── spotpy_results_SCE_KGE.csv   # Full optimization history
-│   └── plots/                       # Diagnostic plots (if generated)
-├── tensorboard_logs/                # TensorBoard logging data
-│   └── SCE_KGE_{gage_id}_{date}/
-├── config/                          # Realization file with updated best parameters
-│   └── realization.json
+│   ├── spotpy_results_<ALG>_<OBJ>.csv
+│   └── plots/                       # Optional diagnostic plots
+├── tensorboard_logs/
+│   └── <run_name>/
+└── config/
+    └── realization.json             # Updated with best parameters
 ```
 
-### Best Parameters File
+### `best_params.csv`
 
-The `best_params.csv` file contains the optimized parameter values:
+One-row CSV containing the winning parameter set.
 
-```csv
-b,satpsi,satdk,maxsmc,expon,slope,K_nash_subsurface,K_lf,MFSNO,MP,RSURF_EXP,SNOW_EMIS,CWP,VCMX25,RSURF_SNOW,SCAMAX
-6.715,0.143,0.000207,0.914,3.399,0.976,0.602,0.288,3.241,14.538,5.467,0.950,0.144,68.526,58.975,0.950
-```
+### `spotpy_results_<ALG>_<OBJ>.csv`
 
-### SPOTPY Results
+Full optimization history, including tried parameter vectors and objective values. Use this file when you want to analyze convergence behavior.
 
-The `spotpy_results_*.csv` file contains the complete optimization history with:
+### Why You May See MPI Abort Text
 
-- All parameter sets tested
-- Objective function values
-- Iteration numbers
-- Chain/run information
-
-### MPI Error Code
-
-At the end of calibration, one of these statements is printed (depending on serial or parallel mode).
-
-If parallel:
-
-```text
-MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
-Proc: [[1066,1],0]
-Errorcode: 0
-```
-
-If serial:
-
-```text
-Sorry! You were supposed to get help about:
-mpi-abort
-```
-
-This is a consequence of using `MPI.abort` to end staggered processes.
+You may see output like `MPI_ABORT was invoked...` near the end. In this codebase, that message is expected during shutdown and does not automatically indicate calibration failure.
 
 ## Monitoring Progress
 
-### Real-time Monitoring with TensorBoard
-
-Monitor calibration progress in real time:
+Run TensorBoard in another terminal:
 
 ```bash
-# In a separate terminal, run:
 tensorboard --logdir=/path/to/data_root/gage-{gage_id}/tensorboard_logs
-
-# Open browser to: http://localhost:6006
 ```
 
-TensorBoard displays:
+Then open: `http://localhost:6006`
 
-- Objective function evolution
-- Parameter traces
-- Hydrograph comparisons
-- Model performance metrics (NSE, KGE, RMSE, MAE)
-- Residual analysis
+Useful dashboards:
+
+- objective function trend
+- parameter traces
+- hydrograph comparisons
+- error metrics (NSE, KGE, RMSE, MAE)
+- residual behavior
 
 ## Troubleshooting
 
@@ -261,53 +277,46 @@ TensorBoard displays:
 
 **Error:** `There are not enough slots available in the system`
 
-**Solution:** Add the `--oversubscribe` flag to `mpirun`:
+Use `--oversubscribe` with `mpirun`:
 
 ```bash
 mpirun -n 20 --oversubscribe python -u main.py [arguments]
 ```
 
-### Issue: Process hangs or doesn't complete
+### Issue: Process hangs or does not complete
 
-**Symptoms:** Calibration starts but never finishes.
+1. Check Docker with:
+   ```bash
+   docker run hello-world
+   ```
+2. If permission errors appear, follow Docker post-install steps:
+   <https://docs.docker.com/engine/install/linux-postinstall/>
+3. Capture tagged MPI logs:
+   ```bash
+   mpirun -n 5 --tag-output python -u main.py [arguments] 2>&1 | tee debug.log
+   ```
 
-**Solutions:**
+### Issue: Rank 0 does not run simulations
 
-1. Check if Docker is running with `docker run hello-world`. If there are permission errors, follow Docker's post-installation steps: <https://docs.docker.com/engine/install/linux-postinstall/>.
-2. Run with tagged output for debugging:
+This is expected in parallel mode. Rank 0 coordinates work; worker ranks run the model.
 
-```bash
-mpirun -n 5 --tag-output python main.py [arguments] 2>&1 | tee debug.log
-```
+### Issue: Missing observed flow file
 
-### Issue: Rank 0 doesn't enter simulation
+The script auto-downloads observed USGS flow if not already cached.
 
-This is normal behavior.
+Verify:
 
-- Rank 0 is the master coordinator in MPI parallel mode.
-- Only worker processes (ranks 1, 2, 3, ...) run simulations.
-- If you want 10 parallel simulations, use `mpirun -n 11` (1 master + 10 workers).
+1. internet access
+2. valid `gage_id`
+3. data availability for your date window
 
-### Issue: Missing observed flow data
+USGS portal: <https://waterdata.usgs.gov/nwis>
 
-**Error:** Cannot find observed flow pickle file.
+### Issue: Docker command fails during model execution
 
-**Solution:** The code automatically downloads USGS data on first run. Ensure:
-
-1. You have an internet connection.
-2. The `gage_id` is valid.
-3. Data exists for your specified date range.
-
-Check USGS data availability: <https://waterdata.usgs.gov/nwis>
-
-### Issue: Docker command fails
-
-**Error:** Docker execution fails during model run.
-
-**Solutions:**
-
-1. Verify Docker image exists: `docker images | grep awiciroh/ciroh-ngen-image`
-2. Ensure the data directory is accessible by checking permissions on `data_root`.
+1. Confirm image exists:
+   `docker images | grep awiciroh/ciroh-ngen-image`
+2. Confirm read/write permissions under `data_root`.
 
 ## Workflow
 
@@ -327,23 +336,24 @@ Check USGS data availability: <https://waterdata.usgs.gov/nwis>
 
 ### Algorithm Selection
 
-- **SCE-UA**: Shuffled Complex Evolution
-  - More thorough global search
-  - Better for complex parameter spaces
-- **DDS**: Dynamically Dimensioned Search
-  - Faster convergence
-  - Good for refining parameters
-  - Adjust `--dds_trials` to control exploration vs exploitation
+- `SCE`:
+  - broader global exploration
+  - often more robust on difficult parameter spaces
+- `DDS`:
+  - typically faster to useful solutions
+  - efficient for high-dimensional tuning
+  - tune `--dds_trials` for exploration depth
 
 ### Recommended Workflow
 
-1. Test with serial mode and 10 repetitions to verify setup.
-2. Run parallel calibration with 100-200 repetitions.
-3. Examine TensorBoard plots to assess convergence.
-4. If needed, run additional iterations starting from best parameters.
-5. Validate results on an independent time period.
+1. Run a short serial smoke test (`--repetitions 10`).
+2. Run parallel calibration with moderate iterations (`100-200`).
+3. Inspect TensorBoard and `spotpy_results_*.csv` for convergence.
+4. Increase repetitions if objective trend is still improving.
+5. Validate best parameters on a different time period.
 
 ## Support
 
-1. Examine TensorBoard logs for detailed diagnostics.
-2. Check SPOTPY documentation: <https://spotpy.readthedocs.io/>
+1. Inspect TensorBoard logs first.
+2. Inspect `spotpy_results_*.csv` for failures/outliers.
+3. Reference SPOTPY docs: <https://spotpy.readthedocs.io/>
