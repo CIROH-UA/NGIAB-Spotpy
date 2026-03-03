@@ -69,7 +69,7 @@ This code:
 
 ## Expected Data Layout
 
-Before running calibration, `data_root` should contain a folder for your gage:
+Before running calibration, `data_root` should contain a folder for your gage and supporting data folders:
 
 ```text
 {data_root}/
@@ -77,10 +77,12 @@ Before running calibration, `data_root` should contain a folder for your gage:
     ├── config/
     │   ├── realization.json
     │   └── troute.yaml
+    ├── forcings/
+    ├── metadata/
     └── outputs/
 ```
 
-`data_root` is the parent directory, not the gage folder itself.
+`data_root` is the parent directory, not the gage folder itself. The `forcings/` and `metadata/` directories are expected alongside `config/` within `gage-{gage_id}`.
 
 Example:
 
@@ -97,7 +99,7 @@ uvx --from ngiab_data_preprocess cli -i gage-10109001 -sfr --start 2015-10-01 --
 If you are unsure where the generated data lives, check:
 
 ```bash
-cat ~/.ngiab/
+cat ~/.ngiab/preprocessor
 ```
 
 ### 2) Run serial mode (debug/validation)
@@ -112,7 +114,7 @@ python -u main.py \
     --execution_mode serial
 ```
 
-### 3) Run parallel mode (recommended for speed)
+### 3) Run parallel mode with merge_catchment feature (recommended for speed)
 
 ```bash
 mpirun -n 11 --oversubscribe python -u main.py \
@@ -121,7 +123,8 @@ mpirun -n 11 --oversubscribe python -u main.py \
     --end_date 2019-12-01 \
     --training_start_date 2017-10-02 \
     --data_root /path/to/data_root \
-    --execution_mode parallel
+    --execution_mode parallel \  
+    --merge_catchment True  \
 ```
 
 The `-u` flag forces unbuffered output, which helps when you are watching logs live.
