@@ -88,14 +88,14 @@ Before running calibration, `data_root` should contain a folder for your gage an
 
 Example:
 
-- If your files are in `/tmp/ngen/gage-10109001/config/realization.json`, then `--data_root` should be `/tmp/ngen`.
+- If your files are in `/tmp/ngen/gage-10163000/config/realization.json`, then `--data_root` should be `/tmp/ngen`.
 
 ## Quick Start
 
 ### 1) Prepare data
 
 ```bash
-uvx --from ngiab_data_preprocess cli -i gage-10109001 -sfr --start 2015-10-01 --end 2019-12-01
+uvx --from ngiab_data_preprocess cli -i gage-10163000 -sfr --start 2015-06-15 --end 2015-08-15
 ```
 
 If you are unsure where the generated data lives, check:
@@ -107,26 +107,13 @@ cat ~/.ngiab/preprocessor
 ### 2) Run serial mode (debug/validation)
 
 ```bash
-python -u main.py \
-    --gage_id 10109001 \
-    --start_date 2015-10-01 \
-    --end_date 2019-12-01 \
-    --training_start_date 2017-10-02 \
-    --data_root /path/to/data_root \
-    --execution_mode serial
+python -u main.py --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode serial
 ```
 
 ### 3) Run parallel mode with merge_catchment feature (recommended for speed)
 
 ```bash
-mpirun -n 11 --oversubscribe python -u main.py \
-    --gage_id 10109001 \
-    --start_date 2015-10-01 \
-    --end_date 2019-12-01 \
-    --training_start_date 2017-10-02 \
-    --data_root /path/to/data_root \
-    --execution_mode parallel \  
-    --merge_catchment True  \
+mpirun -n 11 --oversubscribe python -u main.py --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode parallel --merge_catchment True
 ```
 
 The `-u` flag forces unbuffered output, which helps when you are watching logs live.
@@ -137,10 +124,10 @@ The `-u` flag forces unbuffered output, which helps when you are watching logs l
 
 | Argument | Type | Description | Example |
 | --- | --- | --- | --- |
-| `--gage_id` | string | USGS gage ID used for observed flow retrieval and folder naming | `10109001` |
-| `--start_date` | string | Full simulation start date (`YYYY-MM-DD`) | `2015-10-01` |
-| `--end_date` | string | Full simulation end date (`YYYY-MM-DD`) | `2019-12-01` |
-| `--training_start_date` | string | Start of the calibration/evaluation window inside the simulation period | `2017-10-02` |
+| `--gage_id` | string | USGS gage ID used for observed flow retrieval and folder naming | `10163000` |
+| `--start_date` | string | Full simulation start date (`YYYY-MM-DD`) | `2015-06-15` |
+| `--end_date` | string | Full simulation end date (`YYYY-MM-DD`) | `2015-08-15` |
+| `--training_start_date` | string | Start of the calibration/evaluation window inside the simulation period | `2015-07-15` |
 | `--data_root` | string | Parent folder containing `gage-{gage_id}` | `/home/user/data` |
 
 ### Optional Arguments
@@ -188,46 +175,19 @@ python main.py --help
 ### Example 1: Parallel SCE + KGE
 
 ```bash
-mpirun -n 11 --oversubscribe python -u main.py \
-    --gage_id 10109001 \
-    --start_date 2015-10-01 \
-    --end_date 2019-12-01 \
-    --training_start_date 2017-10-02 \
-    --data_root /home/slama/Documents/hf3_remap/hf3_remap/output \
-    --algorithm SCE \
-    --objective_function KGE \
-    --repetitions 500 \
-    --execution_mode parallel
+mpirun -n 11 --oversubscribe python -u main.py --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /home/slama/Documents/hf3_remap/hf3_remap/output --algorithm SCE --objective_function KGE --repetitions 500 --execution_mode parallel
 ```
 
 ### Example 2: Parallel DDS + RMSE
 
 ```bash
-mpirun -n 6 --oversubscribe python -u main.py \
-    --gage_id 10109001 \
-    --start_date 2015-10-01 \
-    --end_date 2019-12-01 \
-    --training_start_date 2017-10-02 \
-    --data_root /home/slama/Documents/hf3_remap/hf3_remap/output \
-    --algorithm DDS \
-    --objective_function RMSE \
-    --dds_trials 2 \
-    --repetitions 500 \
-    --execution_mode parallel
+mpirun -n 6 --oversubscribe python -u main.py --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /home/slama/Documents/hf3_remap/hf3_remap/output --algorithm DDS --objective_function RMSE --dds_trials 2 --repetitions 500 --execution_mode parallel
 ```
 
 ### Example 3: Serial SCE
 
 ```bash
-python -u main.py \
-    --gage_id 10109001 \
-    --start_date 2015-10-01 \
-    --end_date 2019-12-01 \
-    --training_start_date 2017-10-02 \
-    --data_root /home/slama/Documents/hf3_remap/hf3_remap/output \
-    --algorithm SCE \
-    --repetitions 10 \
-    --execution_mode serial
+python -u main.py --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /home/slama/Documents/hf3_remap/hf3_remap/output --algorithm SCE --repetitions 10 --execution_mode serial
 ```
 
 ## Understanding the Output
