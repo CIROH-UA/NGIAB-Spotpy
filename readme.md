@@ -54,8 +54,10 @@ This code:
    ```bash
    mpirun --version
    ```
-4. Install Rust/Cargo and the routing package:
+4. Install c compiler, fortran, Rust/Cargo, and the routing package:
    ```bash
+   sudo apt install build-essential gfortran
+   sudo apt install -y libhdf5-dev libnetcdf-dev libsqlite3-dev
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    source ~/.cargo/env
    rustup update stable
