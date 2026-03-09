@@ -184,16 +184,28 @@ class GeoPackage:
         for id in ids:
             self.network.loc[-1] = [new_id, id]
 
+    def _rename_divide(self, old_id: str, new_id: str):
+        if not new_id:
+            raise ValueError("new_id must be provided")
+        if old_id == new_id:
+            return
+
+        self.divides.loc[self.divides["divide_id"] == old_id, "divide_id"] = new_id
+        self.divide_attributes.rename(index={old_id: new_id}, inplace=True)
+        self.network.loc[-1] = [new_id, old_id]
+
     def merge(self, ids: list[str | list[str]]) -> None:
         # convert wb ids to cat ids
 
         for i, id_sublist in enumerate(ids):
             sub = ["cat-" + str(id).split("-")[0] for id in id_sublist]
 
-            cat_ids = list(set(sub))
+            cat_ids = list(dict.fromkeys(sub))
 
             if len(cat_ids) > 1:
                 self._merge_divides(cat_ids, f"cat-{i}")
+            elif len(cat_ids) == 1:
+                self._rename_divide(cat_ids[0], f"cat-{i}")
 
         self.divides["toid"] = "nex-1"
 

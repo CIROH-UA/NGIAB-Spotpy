@@ -32,6 +32,7 @@ def main():
     parser.add_argument("--dds_trials", type=int, default=1, help="DDS trials (only used if algorithm=DDS)")
     parser.add_argument("--execution_mode", type=str, default="parallel", choices=["serial", "parallel"], help="Serial or parallel execution")
     parser.add_argument("--merge_catchment", type=str, default=True, help="Whether to merge catchments for calibration")
+    parser.add_argument("--merge_area", type=float, default=330, help="The catchment area to merge the divides in square miles")
     
     args = parser.parse_args()
     args.merge_catchment = str_to_bool(args.merge_catchment)
@@ -60,6 +61,7 @@ def main():
     if args.execution_mode == "parallel" and size == 1:
         if rank == 0:
             print(f"Warning: Parallel mode requested, but only 1 MPI process detected.")
+
     
     # Optional: Retrieve and save observed flow
     if rank == 0:
@@ -75,7 +77,7 @@ def main():
             print_calibration_configuration(args=args, size=size)
             prepare_config_merged_simulation(realization_path=realization_path, troute_path=troute_path)
             if args.merge_catchment:
-                groups = merge_and_prepare_forcing(data_dir=data_dir, execution_mode=args.execution_mode)
+                groups = merge_and_prepare_forcing(data_dir=data_dir, execution_mode=args.execution_mode, merge_area=float(args.merge_area))
 
         # Synchronize all processes
         comm.Barrier()

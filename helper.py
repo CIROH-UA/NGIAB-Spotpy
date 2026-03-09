@@ -67,7 +67,7 @@ def get_partitions(data_dir, geopackage_path) -> Path:
     return partition_file  # return last element to get largest partitions
 
 
-def merge_and_prepare_forcing(data_dir, execution_mode):
+def merge_and_prepare_forcing(data_dir, execution_mode, merge_area):
     '''Merges the geopackage, prepares forcing data, and creates partitions for the merged geopackage simulation.'''
 
     #prepare partitions before merging
@@ -85,7 +85,7 @@ def merge_and_prepare_forcing(data_dir, execution_mode):
     print("Merging geopackage and preparing forcing data...")
     #merge the geopackage
     hf = GeoPackage(original_gpkg)
-    groups = group_catchments(original_gpkg)
+    groups = group_catchments(original_gpkg, merge_area)
     hf.merge(groups)
     hf.save(merged_geopackage)
 
@@ -165,15 +165,18 @@ def process_usgs_streamflow(site, start, end, output_path=None):
     adjusted_start = start.strftime("%Y-%m-%d")
     adjusted_end = end.strftime("%Y-%m-%d")
 
-    dfo_usgs = nwis.get_record(sites=site, service="iv", start=adjusted_start, end=adjusted_end)
-    dfo_usgs.index = pd.to_datetime(dfo_usgs.index)
-    dfo_usgs["Time"] = dfo_usgs.index.floor("h")
-    dfo_usgs["00060"] = pd.to_numeric(dfo_usgs["00060"], errors="coerce")
-    dfo_usgs_hr = dfo_usgs.groupby("Time")["00060"].mean().reset_index()
-    dfo_usgs_hr["values"] = dfo_usgs_hr["00060"] / 35.3147
-    dfo_usgs_hr = dfo_usgs_hr[["Time", "values"]]
-    #interpolate missing values
-    dfo_usgs_hr["values"] = dfo_usgs_hr["values"].interpolate(method='linear')
+    try:
+        dfo_usgs = nwis.get_record(sites=site, service="iv", start=adjusted_start, end=adjusted_end)
+        dfo_usgs.index = pd.to_datetime(dfo_usgs.index)
+        dfo_usgs["Time"] = dfo_usgs.index.floor("h")
+        dfo_usgs["00060"] = pd.to_numeric(dfo_usgs["00060"], errors="coerce")
+        dfo_usgs_hr = dfo_usgs.groupby("Time")["00060"].mean().reset_index()
+        dfo_usgs_hr["values"] = dfo_usgs_hr["00060"] / 35.3147
+        dfo_usgs_hr = dfo_usgs_hr[["Time", "values"]]
+        #interpolate missing values
+        dfo_usgs_hr["values"] = dfo_usgs_hr["values"].interpolate(method='linear')
+    except:
+        raise RuntimeError("There is no streamflow data for the provided gage!")
     if output_path:
         dfo_usgs_hr.to_pickle(output_path)
     return dfo_usgs_hr
