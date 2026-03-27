@@ -201,14 +201,18 @@ class NextGenSetup:
 
     def run_model(self, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir, groups):
         #running nextgen simulation ro get lateral flows
+        
         if self.merge_catchment:
             gpkg_path = Path("/ngen/ngen/data/config/merged.gpkg")
         else:
             gpkg_path = Path("/ngen/ngen/data/config") / f"{Path(self.data_dir).name}_subset.gpkg"
         try:
             if self.execution_mode == "serial":
-                cmd_base = f"docker run --rm --entrypoint mpirun -w /ngen/ngen/data  -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image /dmod/bin/ngen-parallel"
-                ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
+                #important note: number of cores exposed should be less than or equal to number of partitions.
+                partition_file = next(Path(self.data_dir).glob("*.json")).name
+                cpu_count = partition_file.split(".")[0].split("_")[-1]
+                cmd_base = f"docker run --rm --entrypoint mpirun -w /ngen/ngen/data  -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image -n {cpu_count} /dmod/bin/ngen-parallel"
+                ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)} /ngen/ngen/data/{partition_file} "
                 print(cmd_base + ngen_cmd)
                 subprocess.call(cmd_base + ngen_cmd, shell=True)
 

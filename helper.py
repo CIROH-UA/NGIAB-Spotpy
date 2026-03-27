@@ -15,10 +15,12 @@ def get_troute_output_name(path):
     return f"troute_output_{start_date.strftime('%Y%m%d%H%M')}.nc"
 
 
-def prepare_config_merged_simulation(realization_path, troute_path):
+def prepare_config_merged_simulation(data_dir, realization_path, troute_path, execution_mode):
     '''This function prepares the realization_file and t-route file
     s.t. ngen and routing is done seperately'''
 
+    folder = Path(data_dir)
+    gpkg_path = folder / "config" / f"{folder.name}_subset.gpkg"
     print("Preparing configuration files for merged geopackage simulation...")
     #removing routing parameter from the realization file
     with open(realization_path, "r") as file:
@@ -37,6 +39,14 @@ def prepare_config_merged_simulation(realization_path, troute_path):
     data['compute_parameters']['forcing_parameters']['qlat_file_value_col'] = "Q_OUT"
     with open(troute_path, 'w') as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, width=100)
+
+    #remove existing partiton files if any
+    partiton_files = list(folder.glob("partitions_*.json"))
+    if len(partiton_files) > 0:
+        os.system(f"rm -rf {folder}/partitions_*.json")
+
+    if execution_mode == "serial":
+        get_partitions(data_dir, gpkg_path)
 
 def print_calibration_configuration(args, size):
     '''Prints calibration configuration before the calibration'''
@@ -102,7 +112,7 @@ def merge_and_prepare_forcing(data_dir, execution_mode, merge_area):
 
     backup(realization)
     backup(troute)
-    cmd = f"uvx -p 3.10 ngiab-prep -i {folder.name} -o {folder.name} --start {start} --end {end} -fr --source aorc"
+    cmd = f"uvx -p 3.10 ngiab-prep -i {folder.name} -o {folder.name} --start {start} --end {end} -fr"
 
     os.system(cmd)
 

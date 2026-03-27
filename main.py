@@ -75,7 +75,7 @@ def main():
     try:
         if rank == 0:
             print_calibration_configuration(args=args, size=size)
-            prepare_config_merged_simulation(realization_path=realization_path, troute_path=troute_path)
+            prepare_config_merged_simulation(data_dir, realization_path=realization_path, troute_path=troute_path, execution_mode=args.execution_mode)
             if args.merge_catchment:
                 groups = merge_and_prepare_forcing(data_dir=data_dir, execution_mode=args.execution_mode, merge_area=float(args.merge_area))
 

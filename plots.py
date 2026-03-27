@@ -164,6 +164,12 @@ def plot_bestmodelrun(results, evaluation, fig_name="Best_model_run.png", output
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"A plot of the best model run has been saved as {save_path}")
 
+    csv_path = os.path.join(output_folder, "Best_model_run.csv")
+    with open(csv_path, "w") as f:
+        f.write("index,observed,simulated\n")
+        for i, (obs, sim) in enumerate(zip(evaluation, best_simulation)):
+            f.write(f"{i},{obs},{sim}\n")
+    print(f"Observed vs best simulated saved to {csv_path}")
 
 # Optional: Add a new function for correlation heatmap
 def plot_parameter_correlation(results, fig_name="ParameterCorrelation.png", output_folder=None):
