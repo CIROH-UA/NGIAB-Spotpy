@@ -11,7 +11,6 @@ This project calibrates NextGen model parameters with SPOTPY and supports both s
 - [Quick Start](#quick-start)
 - [Command Line Arguments](#command-line-arguments)
 - [Execution Modes](#execution-modes)
-- [Usage Examples](#usage-examples)
 - [Understanding the Output](#understanding-the-output)
 - [Monitoring Progress](#monitoring-progress)
 - [Troubleshooting](#troubleshooting)
@@ -41,6 +40,10 @@ This code:
 ## Installation
 
 1. Clone the repository and enter it.
+   ```bash
+   git clone https://github.com/slama0077/ayman_cal_SL.git
+   cd ayman_cal_SL
+   ```
 2. Install OpenMPI.
    - macOS:
      ```bash
@@ -64,9 +67,14 @@ This code:
    cargo --version
    cargo install --git https://github.com/slama0077/route_rs.git --branch Calibration
    ```
-5. Install Python dependencies:
+5. Create and activate a virtual environment:
    ```bash
-   pip install -r requirements.txt
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+6. Install Python dependencies from `pyproject.toml`:
+   ```bash
+   pip install -e .
    ```
 
 ## Expected Data Layout
@@ -95,7 +103,7 @@ Example:
 ### 1) Prepare data
 
 ```bash
-uvx --from ngiab_data_preprocess cli -i gage-10163000 -sfr --start 2015-06-15 --end 2015-08-15
+uvx --from ngiab_data_preprocess cli -i gage-10163000 -sfr --start 2015-06-15 --end 2015-08-15 --source aorc
 ```
 
 If you are unsure where the generated data lives, check:
@@ -107,16 +115,41 @@ cat ~/.ngiab/preprocessor
 ### 2) Run serial mode (debug/validation)
 
 ```bash
-python -u main.py --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode serial
+python -u -m calibration --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode serial
+```
+
+Or using the installed entry point:
+
+```bash
+PYTHONUNBUFFERED=1 calibration --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode serial
 ```
 
 ### 3) Run parallel mode with merge_catchment feature (recommended for speed)
 
 ```bash
-mpirun -n 11 --oversubscribe python -u main.py --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode parallel --merge_catchment True
+mpirun -n 11 --oversubscribe python -u -m calibration --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode parallel --merge_catchment True
 ```
 
-The `-u` flag forces unbuffered output, which helps when you are watching logs live.
+Or using the installed entry point:
+
+```bash
+PYTHONUNBUFFERED=1 mpirun -n 11 --oversubscribe calibration --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode parallel --merge_catchment True
+```
+
+Unbuffered output notes:
+
+- Python buffers stdout when output is redirected or not attached to a terminal, which can make logs appear late or in bursts.
+- Use `-u` with `python` or `PYTHONUNBUFFERED=1` to force line-by-line output for live monitoring.
+
+### Optional Arguments and Defaults (all optional)
+
+- `--algorithm` (default: `DDS`, options: `SCE`, `DDS`)
+- `--objective_function` (default: `KGE`, options: `KGE`, `RMSE`)
+- `--repetitions` (default: `100`)
+- `--dds_trials` (default: `1`)
+- `--execution_mode` (default: `parallel`, options: `serial`, `parallel`)
+- `--merge_catchment` (default: `True`, bool-like string)
+- `--merge_area` (default: `330`)
 
 ## Command Line Arguments
 
@@ -140,6 +173,7 @@ The `-u` flag forces unbuffered output, which helps when you are watching logs l
 | `--dds_trials` | integer | `1` | positive integer | DDS restart trials (used only when `--algorithm DDS`) |
 | `--execution_mode` | string | `parallel` | `serial`, `parallel` | Controls MPI behavior |
 | `--merge_catchment` | bool-like string | `True` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
+| `--merge_area` | float | `330` | positive float | Catchment area threshold in square km used to merge divides |
 
 ### Argument Notes
 
@@ -151,7 +185,7 @@ The `-u` flag forces unbuffered output, which helps when you are watching logs l
 ### Help
 
 ```bash
-python main.py --help
+python -m calibration --help
 ```
 
 ## Execution Modes
@@ -161,7 +195,7 @@ python main.py --help
 - Runs with one process (no MPI worker pool).
 - Best for debugging and first-run validation.
 - Command pattern:
-  `python main.py ... --execution_mode serial`
+  `python -m calibration ... --execution_mode serial`
 
 ### Parallel Mode
 
@@ -169,26 +203,6 @@ python main.py --help
 - Rank 0 is coordinator; worker ranks execute simulations.
 - If you need `N` worker simulations, use `mpirun -n N+1`.
   - Example: 10 workers -> `mpirun -n 11`.
-
-## Usage Examples
-
-### Example 1: Parallel SCE + KGE
-
-```bash
-mpirun -n 11 --oversubscribe python -u main.py --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /home/slama/Documents/hf3_remap/hf3_remap/output --algorithm SCE --objective_function KGE --repetitions 500 --execution_mode parallel
-```
-
-### Example 2: Parallel DDS + RMSE
-
-```bash
-mpirun -n 6 --oversubscribe python -u main.py --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /home/slama/Documents/hf3_remap/hf3_remap/output --algorithm DDS --objective_function RMSE --dds_trials 2 --repetitions 500 --execution_mode parallel
-```
-
-### Example 3: Serial SCE
-
-```bash
-python -u main.py --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /home/slama/Documents/hf3_remap/hf3_remap/output --algorithm SCE --repetitions 10 --execution_mode serial
-```
 
 ## Understanding the Output
 
@@ -245,7 +259,7 @@ Useful dashboards:
 Use `--oversubscribe` with `mpirun`:
 
 ```bash
-mpirun -n 20 --oversubscribe python -u main.py [arguments]
+PYTHONUNBUFFERED=1 mpirun -n 20 --oversubscribe calibration [arguments]
 ```
 
 ### Issue: Process hangs or does not complete
@@ -256,10 +270,6 @@ mpirun -n 20 --oversubscribe python -u main.py [arguments]
    ```
 2. If permission errors appear, follow Docker post-install steps:
    <https://docs.docker.com/engine/install/linux-postinstall/>
-3. Capture tagged MPI logs:
-   ```bash
-   mpirun -n 5 --tag-output python -u main.py [arguments] 2>&1 | tee debug.log
-   ```
 
 ### Issue: Rank 0 does not run simulations
 
