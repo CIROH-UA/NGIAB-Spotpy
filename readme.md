@@ -71,13 +71,20 @@ This code:
    - macOS (Unix):
      ```bash
      xcode-select --install
-     brew install gcc hdf5 netcdf sqlite
+     brew install gcc hdf5@1.10 netcdf sqlite
      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
      source ~/.cargo/env
      rustup update stable
      cargo --version
+     export HDF5_DIR="$(brew --prefix hdf5@1.10)"
+     export RUSTFLAGS="-C link-args=-Wl,-rpath,$HDF5_DIR/lib"
+     export DYLD_FALLBACK_LIBRARY_PATH="$HDF5_DIR/lib"
      cargo install --git https://github.com/slama0077/route_rs.git --branch Calibration
      ```
+     If `cargo install` fails with `Invalid H5_VERSION: "2.x.y"`, Homebrew's current `hdf5`
+     package is too new for the `hdf5-metno-sys` crate used by `route_rs`. Use a supported
+     1.x installation such as `hdf5@1.10` and point `HDF5_DIR` at that prefix before running
+     `cargo install`.
 5. Create and activate a virtual environment:
    ```bash
    python -m venv .venv

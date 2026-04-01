@@ -246,7 +246,11 @@ class NextGenSetup:
 
         #running troute simulation to get streamflow
         try:
-            cmd = f"route_rs {self.data_dir} {Path(self.data_dir) / "config" / f"{Path(self.data_dir).name}_subset.gpkg"} {temp_ngen_output_dir} {temp_troute_output_dir} --num-threads 31"
+            subset_gpkg = Path(self.data_dir) / "config" / f"{Path(self.data_dir).name}_subset.gpkg"
+            cmd = (
+                f"route_rs {self.data_dir} {subset_gpkg} "
+                f"{temp_ngen_output_dir} {temp_troute_output_dir} --num-threads 31"
+            )
             subprocess.call(cmd, shell=True)
         except:
             raise RuntimeError("T-route run failed.")
