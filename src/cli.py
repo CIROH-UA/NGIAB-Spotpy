@@ -62,7 +62,7 @@ def main() -> int:
     
     if args.execution_mode == "parallel" and size == 1:
         if rank == 0:
-            print(f"Warning: Parallel mode requested, but only 1 MPI process detected.")
+            raise ValueError(f"Parallel mode requested, but only 1 MPI process detected.")
 
     
     # Optional: Retrieve and save observed flow

@@ -57,16 +57,27 @@ This code:
    ```bash
    mpirun --version
    ```
-4. Install c compiler, fortran, Rust/Cargo, and the routing package:
-   ```bash
-   sudo apt install build-essential gfortran
-   sudo apt install -y libhdf5-dev libnetcdf-dev libsqlite3-dev
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   source ~/.cargo/env
-   rustup update stable
-   cargo --version
-   cargo install --git https://github.com/slama0077/route_rs.git --branch Calibration
-   ```
+4. Install C compiler, Fortran, Rust/Cargo, and the routing package:
+   - Linux (Debian/Ubuntu):
+     ```bash
+     sudo apt install build-essential gfortran
+     sudo apt install -y libhdf5-dev libnetcdf-dev libsqlite3-dev
+     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+     source ~/.cargo/env
+     rustup update stable
+     cargo --version
+     cargo install --git https://github.com/slama0077/route_rs.git --branch Calibration
+     ```
+   - macOS (Unix):
+     ```bash
+     xcode-select --install
+     brew install gcc hdf5 netcdf sqlite
+     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+     source ~/.cargo/env
+     rustup update stable
+     cargo --version
+     cargo install --git https://github.com/slama0077/route_rs.git --branch Calibration
+     ```
 5. Create and activate a virtual environment:
    ```bash
    python -m venv .venv
