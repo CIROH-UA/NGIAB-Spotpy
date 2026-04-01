@@ -81,10 +81,6 @@ This code:
      export DYLD_FALLBACK_LIBRARY_PATH="$HDF5_DIR/lib"
      cargo install --git https://github.com/slama0077/route_rs.git --branch Calibration
      ```
-     If `cargo install` fails with `Invalid H5_VERSION: "2.x.y"`, Homebrew's current `hdf5`
-     package is too new for the `hdf5-metno-sys` crate used by `route_rs`. Use a supported
-     1.x installation such as `hdf5@1.10` and point `HDF5_DIR` at that prefix before running
-     `cargo install`.
 5. Create and activate a virtual environment:
    ```bash
    python -m venv .venv
