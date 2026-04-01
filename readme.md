@@ -43,6 +43,7 @@ This code:
    ```bash
    git clone https://github.com/slama0077/ayman_cal_SL.git
    cd ayman_cal_SL
+   git checkout Parallel
    ```
 2. Install OpenMPI.
    - macOS:
@@ -126,7 +127,7 @@ If you are unsure where the generated data lives, check:
 cat ~/.ngiab/preprocessor
 ```
 
-### 2) Run serial mode (debug/validation)
+### 2) Run serial mode (Do not forget to change /path/to/data_root)
 
 ```bash
 python -u -m calibration --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode serial
