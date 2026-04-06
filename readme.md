@@ -313,15 +313,23 @@ USGS portal: <https://waterdata.usgs.gov/nwis>
 ### Parallel Calibration
 
 <p align="center">
-  <img src="workflow/parallel_calibration.png" width="500" height="1000">
+  <img src="docs/parallel_calibration.svg" >
 </p>
 
 ### Simulation and Evaluation
-
-<p align="center">
-  <img src="workflow/sim_and_eval.png" width="500" height="500">
-</p>
-
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart LR
+    A(Create temporary ngen & troute output directories) --> B
+    B[Create temporary config files] --> C
+    C[Update output path in config files] --> D
+    D[Docker ngen & troute simulation] --> E
+    E[Evaluation/Metric Calculation] --> F
+    F(Clean up temporary files and directories)
+```
 ## Additional Notes
 
 ### Algorithm Selection
