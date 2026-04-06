@@ -9,7 +9,7 @@ requires-python = ">=3.10"
 dependencies = [
     "absl-py==2.3.1",
     "asttokens==3.0.1",
-    "bokeh==3.8.1",
+    "bokeh==3.8.2",
     "certifi==2025.11.12",
     "cftime==1.6.5",
     "charset-normalizer==3.4.4",
