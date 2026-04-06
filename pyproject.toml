@@ -77,7 +77,7 @@ dependencies = [
     "tensorboard==2.20.0",
     "tensorboard-data-server==0.7.2",
     "tensorboardx==2.6.4",
-    "tornado==6.5.2",
+    "tornado==6.5.5",
     "traitlets==5.14.3",
     "typing-extensions==4.15.0",
     "tzdata==2025.2",
