@@ -14,6 +14,7 @@ from tensorboardX import SummaryWriter
 import tempfile
 import yaml
 import shutil
+from time import sleep
 import matplotlib.pyplot as plt
 import mpi4py.MPI as MPI
 
@@ -208,23 +209,28 @@ class NextGenSetup:
         try:
             if self.execution_mode == "serial":
                 #important note: number of cores exposed should be less than or equal to number of partitions.
-                partition_file = next(Path(self.data_dir).glob("*.json")).name
-                cpu_count = partition_file.split(".")[0].split("_")[-1]
-                cmd_base = f"docker run --rm --entrypoint mpirun -w /ngen/ngen/data  -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image -n {cpu_count} /dmod/bin/ngen-parallel"
-                ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)} /ngen/ngen/data/{partition_file} "
-                print(cmd_base + ngen_cmd)
-                subprocess.call(cmd_base + ngen_cmd, shell=True)
+                # partition_file = next(Path(self.data_dir).glob("*.json")).name
+                # cpu_count = partition_file.split(".")[0].split("_")[-1]
+                # cmd_base = f"docker run --rm --entrypoint mpirun -w /ngen/ngen/data  -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image -n {cpu_count} /dmod/bin/ngen-parallel"
+                # ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)} /ngen/ngen/data/{partition_file} "
+                # cmd = cmd_base + ngen_cmd
+                # print(cmd)
+                cmd = f"bmi-driver {self.data_dir} --hf {Path(self.data_dir)/ 'config' / os.path.basename(gpkg_path)} --config {Path(self.data_dir)/ 'config' / os.path.basename(realization)}"
+                subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
             else:
-                cmd_base = f"docker run --rm --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
-                ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
-                print(cmd_base + ngen_cmd)               
-                subprocess.call(cmd_base + ngen_cmd, shell=True)
+                # cmd_base = f"docker run --rm --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
+                # ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
+                # cmd = cmd_base + ngen_cmd
+                # print(cmd)
+                cmd = f"bmi-driver {self.data_dir} -j 1 --hf {Path(self.data_dir)/ 'config' / os.path.basename(gpkg_path)} --config {Path(self.data_dir)/ 'config' / os.path.basename(realization)}"
+         
+                subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except:
             raise RuntimeError("Next Gen Simulation failed.")
         
         # MPI.COMM_WORLD.barrier()
-        print("All processes completed ngen simulation.")
+        # print("All processes completed ngen simulation.")
 
         if self.merge_catchment:
             #create symbolic link for actual lateral files to merged lateral files if merged catchment is true
@@ -247,20 +253,20 @@ class NextGenSetup:
         try:
             subset_gpkg = Path(self.data_dir) / "config" / f"{Path(self.data_dir).name}_subset.gpkg"
             cmd = (
-                f"route_rs {self.data_dir} {subset_gpkg} "
-                f"{temp_ngen_output_dir} {temp_troute_output_dir} --num-threads 31"
+                f"rs-route {self.data_dir} --hf {subset_gpkg} -k route-rs "
+                f"-i {temp_ngen_output_dir} -o {temp_troute_output_dir}"
             )
-            subprocess.call(cmd, shell=True)
+            subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL , stderr=subprocess.DEVNULL)
         except:
             raise RuntimeError("T-route run failed.")
         rank = MPI.COMM_WORLD.rank
-        print(f"Rank {rank} completed troute simulation.")
+        # print(f"Rank {rank} completed troute simulation.")
         self.troute_output_path = os.path.join(temp_troute_output_dir, os.path.basename(self.troute_output_path))
         if not os.path.exists(self.troute_output_path):
             print(f"Rank {rank} doesn't have troute output file. ####")
             raise RuntimeError("Nextgen Run failed. Couldn't find troute file.")
         else:
-            print("Nextgen run complete.")
+            # print("Nextgen run complete.")
             #remove realization file
             shutil.rmtree(temp_ngen_output_dir)
             os.remove(realization)
@@ -360,7 +366,7 @@ class SpotpySetup:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, dir = os.path.join(self.data_dir, "config")) as temp_file_realization:
             json.dump(data, temp_file_realization, indent=4, ensure_ascii=False)
             temp_file_realization_name = temp_file_realization.name
-            print(f"Temporary file created: {temp_file_realization_name} by rank {rank}")
+            # print(f"Temporary file created: {temp_file_realization_name} by rank {rank}")
 
         troute_config_path = Path(self.data_dir) / "config" / "troute.yaml"
         with open(troute_config_path, 'r') as f:
@@ -368,14 +374,14 @@ class SpotpySetup:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, dir = os.path.join(self.data_dir, "config")) as temp_file_yaml:
             yaml.dump(data, temp_file_yaml)
             temp_file_yaml_name = temp_file_yaml.name
-            print(f"Temporary YAML file created: {temp_file_yaml_name} by rank {rank}")
+            # print(f"Temporary YAML file created: {temp_file_yaml_name} by rank {rank}")
 
         #create temporary output directories for ngen and troute for each process
         temp_ngen_output_dir = tempfile.mkdtemp(dir = os.path.join(self.data_dir, "outputs/ngen"))
         temp_troute_output_dir = tempfile.mkdtemp(dir = os.path.join(self.data_dir, "outputs/troute"))
 
-        print(f"Temporary Nextgen output directory: {temp_ngen_output_dir} by rank {rank}")
-        print(f"Temporary T-route output directory: {temp_troute_output_dir} by rank {rank}")
+        # print(f"Temporary Nextgen output directory: {temp_ngen_output_dir} by rank {rank}")
+        # print(f"Temporary T-route output directory: {temp_troute_output_dir} by rank {rank}")
 
         update_output_path(temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir)
 

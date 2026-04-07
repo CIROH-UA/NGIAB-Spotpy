@@ -112,7 +112,7 @@ def merge_and_prepare_forcing(data_dir, execution_mode, merge_area):
 
     backup(realization)
     backup(troute)
-    cmd = f"uvx -p 3.10 ngiab-prep -i {folder.name} -o {folder.name} --start {start} --end {end} -fr --source aorc"
+    cmd = f"uvx -p 3.10 ngiab-prep -i {folder.name} -o {folder.name} --start {start} --end {end} -fr"
 
     os.system(cmd)
 
