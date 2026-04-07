@@ -171,6 +171,7 @@ def plot_bestmodelrun(results, evaluation, fig_name="Best_model_run.png", output
             f.write(f"{i},{obs},{sim}\n")
     print(f"Observed vs best simulated saved to {csv_path}")
 
+
 # Optional: Add a new function for correlation heatmap
 def plot_parameter_correlation(results, fig_name="ParameterCorrelation.png", output_folder=None):
     """Create a correlation heatmap of parameters using seaborn"""
@@ -212,4 +213,3 @@ def plot_parameter_correlation(results, fig_name="ParameterCorrelation.png", out
 
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f'Correlation heatmap saved as "{save_path}"')
-

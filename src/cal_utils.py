@@ -1,22 +1,20 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import mpi4py.MPI as MPI
 import numpy as np
 import pandas as pd
 import spotpy
 import xarray as xr
+import yaml
 from spotpy.parameter import Uniform
 from tensorboardX import SummaryWriter
-import tempfile
-import yaml
-import shutil
-from time import sleep
-import matplotlib.pyplot as plt
-import mpi4py.MPI as MPI
 
 from plots import (
     plot_bestmodelrun,
@@ -27,21 +25,28 @@ from plots import (
 
 sys.path.append("/ngen/pyngiab")
 
-def update_output_path(realization_path_name, troute_config_file_name, temp_ngen_output_dir, temp_troute_output_dir):
-    #updating troute and ngen output path in realization
-    with open(realization_path_name, 'r') as f:
+
+def update_output_path(
+    realization_path_name, troute_config_file_name, temp_ngen_output_dir, temp_troute_output_dir
+):
+    # updating troute and ngen output path in realization
+    with open(realization_path_name, "r") as f:
         data = json.load(f)
-    data['output_root'] = os.path.join("outputs/ngen",os.path.basename(temp_ngen_output_dir))
+    data["output_root"] = os.path.join("outputs/ngen", os.path.basename(temp_ngen_output_dir))
     # data['routing']['t_route_config_file_with_path'] = os.path.join("config",os.path.basename(troute_config_file_name))
-    with open(realization_path_name, 'w') as f:
+    with open(realization_path_name, "w") as f:
         json.dump(data, f, indent=4)
 
-    #updating lateral input path (that comes from temp_ngen_output_dir) and stream output path in troute yaml file
-    with open(troute_config_file_name, 'r') as f:
+    # updating lateral input path (that comes from temp_ngen_output_dir) and stream output path in troute yaml file
+    with open(troute_config_file_name, "r") as f:
         data = yaml.safe_load(f)
-    data['output_parameters']['stream_output']['stream_output_directory'] = os.path.join("outputs/troute",os.path.basename(temp_troute_output_dir))
-    data['compute_parameters']['forcing_parameters']['qlat_input_folder'] = os.path.join("outputs/ngen",os.path.basename(temp_ngen_output_dir))
-    with open(troute_config_file_name, 'w') as f:
+    data["output_parameters"]["stream_output"]["stream_output_directory"] = os.path.join(
+        "outputs/troute", os.path.basename(temp_troute_output_dir)
+    )
+    data["compute_parameters"]["forcing_parameters"]["qlat_input_folder"] = os.path.join(
+        "outputs/ngen", os.path.basename(temp_ngen_output_dir)
+    )
+    with open(troute_config_file_name, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, width=100)
 
 
@@ -82,12 +87,10 @@ def update_snow_emis(data_dir, value):
         file.writelines(lines)
 
 
-
-
 def parameters_available_bool(realization_path):
-    '''If parameters already exist in the realization file, use them 
-    as initial parameters. Only available for DDS algorithm.'''
-    with open(realization_path, 'r') as f:
+    """If parameters already exist in the realization file, use them
+    as initial parameters. Only available for DDS algorithm."""
+    with open(realization_path, "r") as f:
         config = json.load(f)
 
     models_list = ["CFE", "NoahOWP"]
@@ -127,9 +130,9 @@ def parameters_available_bool(realization_path):
             "RSURF_SNOW",
             "SCAMAX",
         ]
-        #just taking the parameters that are in param_names
+        # just taking the parameters that are in param_names
         parameters = [v for k, v in parameters.items() if k in param_names]
-    
+
     return parameters_available, parameters
 
 
@@ -166,7 +169,7 @@ class NextGenSetup:
         self.execution_mode = execution_mode
 
     def write_config(self, realization_path_name, params):
-        realization_path = Path(self.data_dir)/ "config" / realization_path_name
+        realization_path = Path(self.data_dir) / "config" / realization_path_name
 
         param_map = {
             "b": params[0],
@@ -198,46 +201,51 @@ class NextGenSetup:
         update_parameters(realization_path, noah_param_updates, "NoahOWP")
         # update_snow_emis(self.data_dir, params[11])
 
+    def run_model(
+        self, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir, groups
+    ):
+        # running nextgen simulation ro get lateral flows
 
-    def run_model(self, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir, groups):
-        #running nextgen simulation ro get lateral flows
-        
         if self.merge_catchment:
             gpkg_path = Path("/ngen/ngen/data/config/merged.gpkg")
         else:
             gpkg_path = Path("/ngen/ngen/data/config") / f"{Path(self.data_dir).name}_subset.gpkg"
         try:
             if self.execution_mode == "serial":
-                #important note: number of cores exposed should be less than or equal to number of partitions.
+                # important note: number of cores exposed should be less than or equal to number of partitions.
                 # partition_file = next(Path(self.data_dir).glob("*.json")).name
                 # cpu_count = partition_file.split(".")[0].split("_")[-1]
                 # cmd_base = f"docker run --rm --entrypoint mpirun -w /ngen/ngen/data  -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image -n {cpu_count} /dmod/bin/ngen-parallel"
                 # ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)} /ngen/ngen/data/{partition_file} "
                 # cmd = cmd_base + ngen_cmd
                 # print(cmd)
-                cmd = f"bmi-driver {self.data_dir} --hf {Path(self.data_dir)/ 'config' / os.path.basename(gpkg_path)} --config {Path(self.data_dir)/ 'config' / os.path.basename(realization)}"
-                subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                cmd = f"bmi-driver {self.data_dir} --hf {Path(self.data_dir) / 'config' / os.path.basename(gpkg_path)} --config {Path(self.data_dir) / 'config' / os.path.basename(realization)}"
+                subprocess.call(
+                    cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
 
             else:
                 # cmd_base = f"docker run --rm --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {self.data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
                 # ngen_cmd = f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{os.path.basename(realization)}"
                 # cmd = cmd_base + ngen_cmd
                 # print(cmd)
-                cmd = f"bmi-driver {self.data_dir} -j 1 --hf {Path(self.data_dir)/ 'config' / os.path.basename(gpkg_path)} --config {Path(self.data_dir)/ 'config' / os.path.basename(realization)}"
-         
-                subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                cmd = f"bmi-driver {self.data_dir} -j 1 --hf {Path(self.data_dir) / 'config' / os.path.basename(gpkg_path)} --config {Path(self.data_dir) / 'config' / os.path.basename(realization)}"
+
+                subprocess.call(
+                    cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
         except:
             raise RuntimeError("Next Gen Simulation failed.")
-        
+
         # MPI.COMM_WORLD.barrier()
         # print("All processes completed ngen simulation.")
 
         if self.merge_catchment:
-            #create symbolic link for actual lateral files to merged lateral files if merged catchment is true
-            #create a merged directory inside temp_ngen_output_dir
+            # create symbolic link for actual lateral files to merged lateral files if merged catchment is true
+            # create a merged directory inside temp_ngen_output_dir
             merged_lateral_dir = os.path.join(temp_ngen_output_dir, "merged")
             os.makedirs(merged_lateral_dir, exist_ok=True)
-            #mv lat files from temp_ngen_directory to merged directory
+            # mv lat files from temp_ngen_directory to merged directory
             os.system(f"mv {temp_ngen_output_dir}/cat-*.csv {merged_lateral_dir}/")
 
             # groups[i] maps to merged/cat-i.csv by construction.
@@ -249,28 +257,30 @@ class NextGenSetup:
                         f"{temp_ngen_output_dir}/cat-{cat_id}.csv"
                     )
 
-        #running troute simulation to get streamflow
+        # running troute simulation to get streamflow
         try:
             subset_gpkg = Path(self.data_dir) / "config" / f"{Path(self.data_dir).name}_subset.gpkg"
             cmd = (
                 f"rs-route {self.data_dir} --hf {subset_gpkg} -k route-rs "
                 f"-i {temp_ngen_output_dir} -o {temp_troute_output_dir}"
             )
-            subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL , stderr=subprocess.DEVNULL)
+            subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except:
             raise RuntimeError("T-route run failed.")
         rank = MPI.COMM_WORLD.rank
         # print(f"Rank {rank} completed troute simulation.")
-        self.troute_output_path = os.path.join(temp_troute_output_dir, os.path.basename(self.troute_output_path))
+        self.troute_output_path = os.path.join(
+            temp_troute_output_dir, os.path.basename(self.troute_output_path)
+        )
         if not os.path.exists(self.troute_output_path):
             print(f"Rank {rank} doesn't have troute output file. ####")
             raise RuntimeError("Nextgen Run failed. Couldn't find troute file.")
         else:
             # print("Nextgen run complete.")
-            #remove realization file
+            # remove realization file
             shutil.rmtree(temp_ngen_output_dir)
             os.remove(realization)
-            os.remove(troute_yaml)  
+            os.remove(troute_yaml)
 
     def evaluate(self, temp_troute_output_dir, feature_id):
         ds = xr.open_dataset(self.troute_output_path)
@@ -280,6 +290,7 @@ class NextGenSetup:
         simulated = simulated[: len(self.observed) - 1]
         shutil.rmtree(temp_troute_output_dir)
         return simulated
+
 
 # === SPOTPY Setup Class for Calibration with TensorBoard ===
 class SpotpySetup:
@@ -359,35 +370,50 @@ class SpotpySetup:
     def simulation(self, vector):
         self.current_params = vector
         rank = MPI.COMM_WORLD.rank
-        #cerate a temporary copy of realization file and yaml file for each process
-        realization_path = Path(self.data_dir)/ "config" / "realization.json"
-        with open(realization_path, 'r') as f:
+        # cerate a temporary copy of realization file and yaml file for each process
+        realization_path = Path(self.data_dir) / "config" / "realization.json"
+        with open(realization_path, "r") as f:
             data = json.load(f)
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, dir = os.path.join(self.data_dir, "config")) as temp_file_realization:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, dir=os.path.join(self.data_dir, "config")
+        ) as temp_file_realization:
             json.dump(data, temp_file_realization, indent=4, ensure_ascii=False)
             temp_file_realization_name = temp_file_realization.name
             # print(f"Temporary file created: {temp_file_realization_name} by rank {rank}")
 
         troute_config_path = Path(self.data_dir) / "config" / "troute.yaml"
-        with open(troute_config_path, 'r') as f:
+        with open(troute_config_path, "r") as f:
             data = yaml.safe_load(f)
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, dir = os.path.join(self.data_dir, "config")) as temp_file_yaml:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False, dir=os.path.join(self.data_dir, "config")
+        ) as temp_file_yaml:
             yaml.dump(data, temp_file_yaml)
             temp_file_yaml_name = temp_file_yaml.name
             # print(f"Temporary YAML file created: {temp_file_yaml_name} by rank {rank}")
 
-        #create temporary output directories for ngen and troute for each process
-        temp_ngen_output_dir = tempfile.mkdtemp(dir = os.path.join(self.data_dir, "outputs/ngen"))
-        temp_troute_output_dir = tempfile.mkdtemp(dir = os.path.join(self.data_dir, "outputs/troute"))
+        # create temporary output directories for ngen and troute for each process
+        temp_ngen_output_dir = tempfile.mkdtemp(dir=os.path.join(self.data_dir, "outputs/ngen"))
+        temp_troute_output_dir = tempfile.mkdtemp(dir=os.path.join(self.data_dir, "outputs/troute"))
 
         # print(f"Temporary Nextgen output directory: {temp_ngen_output_dir} by rank {rank}")
         # print(f"Temporary T-route output directory: {temp_troute_output_dir} by rank {rank}")
 
-        update_output_path(temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir)
+        update_output_path(
+            temp_file_realization_name,
+            temp_file_yaml_name,
+            temp_ngen_output_dir,
+            temp_troute_output_dir,
+        )
 
         self.model.write_config(temp_file_realization_name, vector)
-        self.model.run_model(temp_file_realization_name, temp_file_yaml_name, temp_ngen_output_dir, temp_troute_output_dir, self.model.groups)
-        return self.model.evaluate(temp_troute_output_dir,self.feature_id)
+        self.model.run_model(
+            temp_file_realization_name,
+            temp_file_yaml_name,
+            temp_ngen_output_dir,
+            temp_troute_output_dir,
+            self.model.groups,
+        )
+        return self.model.evaluate(temp_troute_output_dir, self.feature_id)
 
     def evaluation(self):
         return self.model.observed.values.squeeze()[1:]
@@ -415,8 +441,6 @@ class SpotpySetup:
         )
         correlation = np.corrcoef(evaluation, simulation)[0, 1]
 
-
-
         # # Log to TensorBoard if writer is available
         if self.writer:
             # Log objective function value
@@ -426,7 +450,6 @@ class SpotpySetup:
             self.writer.add_scalar("Metrics/NSE", nse, self.run_id)
             self.writer.add_scalar("Metrics/RMSE", rmse, self.run_id)
             self.writer.add_scalar("Metrics/Correlation", correlation, self.run_id)
-
 
             # # Log parameters
             # for i, param_name in enumerate(self.param_names):
@@ -477,6 +500,7 @@ def plot_results(results, observation_data, output_dir):
     plot_bestmodelrun(results=results, evaluation=observation_data, output_folder=output_dir)
     plot_parameter_correlation(results=results, output_folder=output_dir)
 
+
 # === Function to Run SPOTPY Calibration with TensorBoard ===
 def run_spotpy(
     gage_id,
@@ -526,7 +550,6 @@ def run_spotpy(
 
     invert_objective = best_is_higher != algorithm_maximizes
 
-
     if tensorboard_logdir is None:
         tensorboard_logdir = f"{data_dir}/tensorboard_logs"
     run_name = f"{algorithm}_{objective_function}_{gage_id}_2017_10_02"
@@ -554,17 +577,24 @@ def run_spotpy(
 
     # writer.add_hparams(hparams, {"dummy": 0})  # TensorBoard requires at least one metric
     optimizer = SpotpySetup(
-        model_setup, data_dir, feature_id, invert_objective, obj_func, writer, objective_function, execution_mode
+        model_setup,
+        data_dir,
+        feature_id,
+        invert_objective,
+        obj_func,
+        writer,
+        objective_function,
+        execution_mode,
     )
     db_name = f"{optimizer.output_dir}/spotpy_results_{algorithm}_{objective_function}"
 
-    realization_path = Path(data_dir)/ "config" / "realization.json"
+    realization_path = Path(data_dir) / "config" / "realization.json"
     parameters_available, parameters = parameters_available_bool(realization_path)
 
     parameters_available = False
-    #FIX ME: there are some issues with initial parameters (even with the case of calibrated parameters) not being in the range
-    #so for now, parameters_available is set to false to avoid using them as initial parameters for DDS algorithm. This needs to 
-    #be fixed in the future to fully utilize the benefits of DDS algorithm.
+    # FIX ME: there are some issues with initial parameters (even with the case of calibrated parameters) not being in the range
+    # so for now, parameters_available is set to false to avoid using them as initial parameters for DDS algorithm. This needs to
+    # be fixed in the future to fully utilize the benefits of DDS algorithm.
     # parameters_available = False
     # SCE hyperparameters
     if algorithm == "SCE":
@@ -572,14 +602,18 @@ def run_spotpy(
             sampler = spotpy.algorithms.sceua(optimizer, dbname=db_name, dbformat="csv")
             sampler.sample(repetitions, ngs=5)
         else:
-            sampler = spotpy.algorithms.sceua(optimizer, dbname=db_name, dbformat="csv", parallel="mpi")
+            sampler = spotpy.algorithms.sceua(
+                optimizer, dbname=db_name, dbformat="csv", parallel="mpi"
+            )
             sampler.sample(repetitions, ngs=max((number_of_cores - 1), 5))
 
     elif algorithm == "DDS":
         if execution_mode == "serial":
             sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv")
         else:
-            sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv", parallel="mpi")
+            sampler = spotpy.algorithms.dds(
+                optimizer, dbname=db_name, dbformat="csv", parallel="mpi"
+            )
 
         if parameters_available:
             parameters = np.array(parameters)
@@ -595,7 +629,6 @@ def run_spotpy(
     print("***************************************")
     print("***************************************")
     print(f"*******BEST PARAMETERS**********: {best_params}")
-
 
     best_params_value = best_params[0]
     print(f"Updating the best parameters in the realization file: {realization_path}")

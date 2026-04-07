@@ -25,6 +25,11 @@ dependencies = [
     "xarray>=2025.12.0",
 ]
 
+[dependency-groups]
+dev = [
+    "ruff>=0.15.9",
+]
+
 [project.scripts]
 calibration = "cli:main"
 
@@ -32,3 +37,37 @@ calibration = "cli:main"
 package-dir = {"" = "src", "merge_catchment" = "merge_catchment"}
 packages = ["merge_catchment"]
 py-modules = ["calibration", "cli", "cal_utils", "helper", "plots"]
+
+[tool.ruff]
+line-length = 100
+exclude = [
+    ".html",
+    ".js",
+    ".css",
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+]
