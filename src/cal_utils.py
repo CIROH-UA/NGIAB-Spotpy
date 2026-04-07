@@ -18,7 +18,6 @@ import matplotlib.pyplot as plt
 import mpi4py.MPI as MPI
 
 from plots import (
-    create_interactive_plots,
     plot_bestmodelrun,
     plot_parameter_correlation,
     plot_parameterInteraction,
@@ -471,7 +470,6 @@ def plot_results(results, observation_data, output_dir):
     plot_parameterInteraction(results=results, output_folder=output_dir)
     plot_bestmodelrun(results=results, evaluation=observation_data, output_folder=output_dir)
     plot_parameter_correlation(results=results, output_folder=output_dir)
-    # create_interactive_plots(results=results, evaluation=observation_data, output_folder=output_dir)
 
 # === Function to Run SPOTPY Calibration with TensorBoard ===
 def run_spotpy(
