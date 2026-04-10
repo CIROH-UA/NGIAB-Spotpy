@@ -74,17 +74,18 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+    args.data_root = Path(args.data_root).expanduser()
     args.merge_catchment = str_to_bool(args.merge_catchment)
 
     # Setup paths
-    realization_path = f"{args.data_root}/gage-{args.gage_id}/config/realization.json"
-    troute_path = f"{args.data_root}/gage-{args.gage_id}/config/troute.yaml"
+    data_dir = args.data_root / f"gage-{args.gage_id}"
+    realization_path = data_dir / "config" / "realization.json"
+    troute_path = data_dir / "config" / "troute.yaml"
     observed_flow_path = (
-        f"{args.data_root}/{args.gage_id}_observed_flow_{args.start_date}_{args.end_date}.pkl"
+        args.data_root / f"{args.gage_id}_observed_flow_{args.start_date}_{args.end_date}.pkl"
     )
-    troute_output_path = f"{args.data_root}/gage-{args.gage_id}/outputs/troute/{get_troute_output_name(realization_path)}"
-    data_dir = f"{args.data_root}/gage-{args.gage_id}"
-    tensorboard_logdir = f"{data_dir}/tensorboard_logs"
+    troute_output_path = data_dir / "outputs" / "troute" / get_troute_output_name(realization_path)
+    tensorboard_logdir = data_dir / "tensorboard_logs"
 
     # Check execution mode
     comm = MPI.COMM_WORLD
@@ -104,7 +105,7 @@ def main() -> int:
 
     # Optional: Retrieve and save observed flow
     if rank == 0:
-        if not Path(observed_flow_path).exists():
+        if not observed_flow_path.exists():
             print(f"Retrieving observed streamflow for gage {args.gage_id}...")
             process_usgs_streamflow(
                 args.gage_id, args.start_date, args.end_date, output_path=observed_flow_path
@@ -158,7 +159,7 @@ def main() -> int:
         # Only rank 0 saves results
         if rank == 0:
             # Save the best parameters to a file
-            output_file = f"{data_dir}/spotpy/best_params.csv"
+            output_file = data_dir / "spotpy" / "best_params.csv"
             with open(output_file, "w") as file:
                 header = ",".join([name[3:] for name in best_params[0].dtype.names])
                 file.write(header + "\n")
@@ -173,8 +174,6 @@ def main() -> int:
             print(f"tensorboard --logdir={tensorboard_logdir}")
             print(f"{'=' * 60}\n")
             restore_data_dir(data_dir=data_dir, merge_catchment=args.merge_catchment)
-            # stops all other ongoing processes
-            MPI.COMM_WORLD.Abort(0)
 
     except Exception as e:
         print(f"run_spotpy failed with error: {e} (Process rank {rank})")

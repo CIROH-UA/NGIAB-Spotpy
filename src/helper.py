@@ -12,7 +12,7 @@ from merge_catchment.interface import *
 
 
 def get_troute_output_name(path):
-    with open(path, "r") as file:
+    with Path(path).open("r") as file:
         realization = json.load(file)
     start_date = datetime.strptime(realization["time"]["start_time"], "%Y-%m-%d %H:%M:%S")
     return f"troute_output_{start_date.strftime('%Y%m%d%H%M')}.nc"
@@ -23,23 +23,25 @@ def prepare_config_merged_simulation(data_dir, realization_path, troute_path, ex
     s.t. ngen and routing is done seperately"""
 
     folder = Path(data_dir)
+    realization_path = Path(realization_path)
+    troute_path = Path(troute_path)
     gpkg_path = folder / "config" / f"{folder.name}_subset.gpkg"
     print("Preparing configuration files for merged geopackage simulation...")
     # removing routing parameter from the realization file
-    with open(realization_path, "r") as file:
+    with realization_path.open("r") as file:
         realization = json.load(file)
     if "routing" in realization.keys():
         realization.pop("routing", None)
-    with open(realization_path, "w") as file:
+    with realization_path.open("w") as file:
         json.dump(realization, file, indent=4)
 
     # catchment routing should be done nexus routing is not an option for the merged geopackage
     # this doesn't preserve identation, but that shouldn't be an issue for routing
-    with open(troute_path, "r") as f:
+    with troute_path.open("r") as f:
         data = yaml.safe_load(f)
     data["compute_parameters"]["forcing_parameters"]["qlat_file_pattern_filter"] = "cat-*"
     data["compute_parameters"]["forcing_parameters"]["qlat_file_value_col"] = "Q_OUT"
-    with open(troute_path, "w") as f:
+    with troute_path.open("w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, width=100)
 
     # remove existing partiton files if any
@@ -71,6 +73,7 @@ def print_calibration_configuration(args, size):
 
 def get_partitions(data_dir, geopackage_path) -> Path:
     data_dir = Path(data_dir)
+    geopackage_path = Path(geopackage_path)
     size = os.cpu_count() - 1  # reserving one core for system processes
     partition_file = next(data_dir.glob(f"partitions_{size}.json"), None)
     if partition_file == None:
@@ -198,5 +201,5 @@ def process_usgs_streamflow(site, start, end, output_path=None):
     except:
         raise RuntimeError("There is no streamflow data for the provided gage!")
     if output_path:
-        dfo_usgs_hr.to_pickle(output_path)
+        dfo_usgs_hr.to_pickle(Path(output_path))
     return dfo_usgs_hr

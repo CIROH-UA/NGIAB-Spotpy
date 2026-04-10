@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from pathlib import Path
 from spotpy.analyser import (
     get_maxlikeindex,
     get_parameternames,
@@ -58,12 +59,11 @@ def plot_parametertrace(
 
     # Handle output folder
     if output_folder:
-        import os
-
-        os.makedirs(output_folder, exist_ok=True)
-        save_path = os.path.join(output_folder, fig_name)
+        output_folder = Path(output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+        save_path = output_folder / fig_name
     else:
-        save_path = fig_name
+        save_path = Path(fig_name)
 
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f'The figure has been saved as "{save_path}"')
@@ -94,12 +94,11 @@ def plot_parameterInteraction(results, fig_name="ParameterInteraction.png", outp
 
     # Handle output folder
     if output_folder:
-        import os
-
-        os.makedirs(output_folder, exist_ok=True)
-        save_path = os.path.join(output_folder, fig_name)
+        output_folder = Path(output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+        save_path = output_folder / fig_name
     else:
-        save_path = fig_name
+        save_path = Path(fig_name)
 
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f'Parameter interaction plot saved as "{save_path}"')
@@ -154,17 +153,17 @@ def plot_bestmodelrun(results, evaluation, fig_name="Best_model_run.png", output
 
     # Handle output folder
     if output_folder:
-        import os
-
-        os.makedirs(output_folder, exist_ok=True)
-        save_path = os.path.join(output_folder, fig_name)
+        output_folder = Path(output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+        save_path = output_folder / fig_name
+        csv_path = output_folder / "Best_model_run.csv"
     else:
-        save_path = fig_name
+        save_path = Path(fig_name)
+        csv_path = Path("Best_model_run.csv")
 
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"A plot of the best model run has been saved as {save_path}")
 
-    csv_path = os.path.join(output_folder, "Best_model_run.csv")
     with open(csv_path, "w") as f:
         f.write("index,observed,simulated\n")
         for i, (obs, sim) in enumerate(zip(evaluation, best_simulation)):
@@ -204,12 +203,11 @@ def plot_parameter_correlation(results, fig_name="ParameterCorrelation.png", out
 
     # Handle output folder
     if output_folder:
-        import os
-
-        os.makedirs(output_folder, exist_ok=True)
-        save_path = os.path.join(output_folder, fig_name)
+        output_folder = Path(output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+        save_path = output_folder / fig_name
     else:
-        save_path = fig_name
+        save_path = Path(fig_name)
 
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f'Correlation heatmap saved as "{save_path}"')
