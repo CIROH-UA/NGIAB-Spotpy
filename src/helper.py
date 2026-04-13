@@ -163,6 +163,11 @@ def restore_data_dir(data_dir, merge_catchment):
     # remove partiton files
     os.system(f"rm -rf {data_dir}/partitions_*.json")
 
+    #remove calibration directory
+    calibration_dir = data_dir / "Calibration"
+    if calibration_dir.exists():
+        os.system(f"rm -rf {calibration_dir}")
+
 
 def get_feature_id(data_dir):
     folder = Path(data_dir)
