@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from numpy import partition
 import pandas as pd
 import yaml
 from dataretrieval import nwis
@@ -22,10 +23,7 @@ def prepare_config_merged_simulation(data_dir, realization_path, troute_path, ex
     """This function prepares the realization_file and t-route file
     s.t. ngen and routing is done seperately"""
 
-    folder = Path(data_dir)
-    realization_path = Path(realization_path)
-    troute_path = Path(troute_path)
-    gpkg_path = folder / "config" / f"{folder.name}_subset.gpkg"
+    gpkg_path = data_dir / "config" / f"{data_dir.name}_subset.gpkg"
     print("Preparing configuration files for merged geopackage simulation...")
     # removing routing parameter from the realization file
     with realization_path.open("r") as file:
@@ -45,9 +43,9 @@ def prepare_config_merged_simulation(data_dir, realization_path, troute_path, ex
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, width=100)
 
     # remove existing partiton files if any
-    partiton_files = list(folder.glob("partitions_*.json"))
+    partiton_files = list(data_dir.glob("partitions_*.json"))
     if len(partiton_files) > 0:
-        os.system(f"rm -rf {folder}/partitions_*.json")
+        os.system(f"rm -rf {data_dir}/partitions_*.json")
 
     if execution_mode == "serial":
         get_partitions(data_dir, gpkg_path)
@@ -71,9 +69,7 @@ def print_calibration_configuration(args, size):
     print(f"{'=' * 60}\n")
 
 
-def get_partitions(data_dir, geopackage_path) -> Path:
-    data_dir = Path(data_dir)
-    geopackage_path = Path(geopackage_path)
+def get_partitions(data_dir, geopackage_path):
     size = os.cpu_count() - 1  # reserving one core for system processes
     partition_file = next(data_dir.glob(f"partitions_{size}.json"), None)
     if partition_file == None:
@@ -88,15 +84,14 @@ def merge_and_prepare_forcing(data_dir, execution_mode, merge_area):
     """Merges the geopackage, prepares forcing data, and creates partitions for the merged geopackage simulation."""
 
     # prepare partitions before merging
-    folder = Path(data_dir)
-    original_gpkg = folder / "config" / f"{folder.name}_subset.gpkg"
-    forcing_path = folder / "forcings" / "forcings.nc"
-    merged_geopackage = folder / "config" / "merged.gpkg"
+    original_gpkg = data_dir / "config" / f"{data_dir.name}_subset.gpkg"
+    forcing_path = data_dir / "forcings" / "forcings.nc"
+    merged_geopackage = data_dir / "config" / "merged.gpkg"
 
     # remove existing partiton files if any
-    partiton_files = list(folder.glob("partitions_*.json"))
+    partiton_files = list(data_dir.glob("partitions_*.json"))
     if len(partiton_files) > 0:
-        os.system(f"rm -rf {folder}/partitions_*.json")
+        os.system(f"rm -rf {data_dir}/partitions_*.json")
 
     print("Merging geopackage and preparing forcing data...")
     # merge the geopackage
@@ -105,13 +100,13 @@ def merge_and_prepare_forcing(data_dir, execution_mode, merge_area):
     hf.merge(groups)
     hf.save(merged_geopackage)
 
-    realization = folder / "config" / "realization.json"
-    troute = folder / "config" / "troute.yaml"
+    realization = data_dir / "config" / "realization.json"
+    troute = data_dir / "config" / "troute.yaml"
     start, end = get_dates(realization)
     backup(original_gpkg)
 
     # move forcing file of the forcing directory just outside of the forcings folder so that new data prepared will be for the merged geopackage
-    os.system(f"mv {forcing_path} {folder}")
+    os.system(f"mv {forcing_path} {data_dir}")
 
     # rename merged geopackage to original in the folder
     os.system(f"mv {merged_geopackage} {original_gpkg}")
@@ -119,7 +114,7 @@ def merge_and_prepare_forcing(data_dir, execution_mode, merge_area):
     backup(realization)
     backup(troute)
     cmd = (
-        f"uvx -p 3.10 ngiab-prep -i {folder.name} -o {folder.name} --start {start} --end {end} -fr"
+        f"uvx -p 3.10 ngiab-prep -i {data_dir.name} -o {data_dir.name} --start {start} --end {end} -fr"
     )
 
     os.system(cmd)
@@ -143,13 +138,12 @@ def restore_data_dir(data_dir, merge_catchment):
     """Removes merged geopackage,forcing data prepared for merged geopackage simulation. And removes
     extra tmp yaml and json files created by staggering multiprocessing calibration. Also removes partiton files."""
 
-    folder = Path(data_dir)
     # instead of removing merged geopackage and forcing, create an archive directory and move those files there.
     if merge_catchment:
-        merged_geopackage = folder / "config" / "merged.gpkg"
-        forcing_path = folder / "forcings" / "forcings.nc"
+        merged_geopackage = data_dir / "config" / "merged.gpkg"
+        forcing_path = data_dir / "forcings" / "forcings.nc"
 
-        archive_dir = folder / "archive"
+        archive_dir = data_dir / "archive"
         archive_dir.mkdir(exist_ok=True)
 
         if merged_geopackage.exists():
@@ -158,16 +152,16 @@ def restore_data_dir(data_dir, merge_catchment):
             os.system(f"mv {forcing_path} {archive_dir}")
 
         # move original forcing file back to forcings directory
-        os.system(f"mv {folder}/forcings.nc {forcing_path}")
+        os.system(f"mv {data_dir}/forcings.nc {forcing_path}")
         print("Moved merged geopackage and forcing data used to archive...")
 
     # remove extra tmp yaml and json files created by staggering multiprocessing calibration
-    tmp_files = list(folder.glob("config/tmp*"))
+    tmp_files = list(data_dir.glob("config/tmp*"))
     if len(tmp_files) > 0:
-        os.system(f"rm -rf {folder}/config/tmp*")
+        os.system(f"rm -rf {data_dir}/config/tmp*")
 
     # remove partiton files
-    os.system(f"rm -rf {folder}/partitions_*.json")
+    os.system(f"rm -rf {data_dir}/partitions_*.json")
 
 
 def get_feature_id(data_dir):
