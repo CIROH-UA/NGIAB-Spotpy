@@ -107,7 +107,7 @@ def calibration(
     troute_path = data_dir / "config" / "troute.yaml"
     observed_flow_path = data_root / f"{gage_id}_observed_flow_{start_date}_{end_date}.pkl"
     troute_output_path = data_dir / "outputs" / "troute" / get_troute_output_name(realization_path)
-    tensorboard_logdir = data_dir / "tensorboard_logs"
+    tensorboard_logdir = data_dir / "Calibration" / "tensorboard_logs"
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
@@ -180,7 +180,7 @@ def calibration(
         )
 
         if rank == 0:
-            output_file = data_dir / "spotpy" / "best_params.csv"
+            output_file = data_dir / "Calibration" / "spotpy" / "best_params.csv"
             with open(output_file, "w") as file:
                 header = ",".join([name[3:] for name in best_params[0].dtype.names])
                 file.write(header + "\n")

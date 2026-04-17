@@ -143,7 +143,7 @@ def restore_data_dir(data_dir, merge_catchment):
         merged_geopackage = data_dir / "config" / "merged.gpkg"
         forcing_path = data_dir / "forcings" / "forcings.nc"
 
-        archive_dir = data_dir / "archive"
+        archive_dir = data_dir / "Calibration"/ "archive"
         archive_dir.mkdir(exist_ok=True)
 
         if merged_geopackage.exists():
@@ -155,18 +155,13 @@ def restore_data_dir(data_dir, merge_catchment):
         os.system(f"mv {data_dir}/forcings.nc {forcing_path}")
         print("Moved merged geopackage and forcing data used to archive...")
 
-    # remove extra tmp yaml and json files created by staggering multiprocessing calibration
-    tmp_files = list(data_dir.glob("config/tmp*"))
-    if len(tmp_files) > 0:
-        os.system(f"rm -rf {data_dir}/config/tmp*")
-
     # remove partiton files
     os.system(f"rm -rf {data_dir}/partitions_*.json")
 
-    #remove calibration directory
-    calibration_dir = data_dir / "Calibration"
-    if calibration_dir.exists():
-        os.system(f"rm -rf {calibration_dir}")
+    # #remove calibration directory
+    temp_runs_dir = data_dir / "Calibration" / "Temp_Runs"
+    if temp_runs_dir.exists():
+        os.system(f"rm -rf {temp_runs_dir}")
 
 
 def get_feature_id(data_dir):

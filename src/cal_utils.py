@@ -172,7 +172,7 @@ class NextGenSetup:
                 print(cmd)
                 # cmd = f"bmi-driver {self.data_dir} --hf {self.data_dir / 'config' / gpkg_path.name} --config {self.data_dir / 'config' / realization.name}"
                 subprocess.call(
-                    cmd, shell=True
+                    cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
 
             else:
@@ -185,7 +185,7 @@ class NextGenSetup:
                 # cmd = f"bmi-driver {self.data_dir} -j 1 --hf {self.data_dir / 'config' / gpkg_path.name} --config {self.data_dir / 'config' / realization.name}"
 
                 subprocess.call(
-                    cmd, shell=True
+                    cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
         except:
             raise RuntimeError("Next Gen Simulation failed.")
@@ -279,6 +279,8 @@ class SpotpySetup:
         self.data_dir = data_dir
         self.calibration_dir = data_dir / "Calibration"
         self.calibration_dir.mkdir(exist_ok=True)
+        self.temp_runs = self.calibration_dir / "Temp_Runs"
+        self.temp_runs.mkdir(exist_ok=True)
         self.feature_id = feature_id
         self.run_id = 0
         self.writer = writer
@@ -309,8 +311,8 @@ class SpotpySetup:
         ]
 
         # Ensure spotpy directory exists
-        self.output_dir = Path(data_dir) / "spotpy"
-        (self.output_dir / "plots" / "iterations").mkdir(parents=True, exist_ok=True)
+        self.output_dir = Path(data_dir) / "Calibration" / "spotpy"
+        (self.output_dir / "plots").mkdir(parents=True, exist_ok=True)
 
     def _create_process_temp_dir(self) -> Path:
         """
@@ -330,7 +332,7 @@ class SpotpySetup:
         Path
             Root of the temporary mirror directory.
         """
-        tmp_root = Path(tempfile.mkdtemp(dir=self.calibration_dir))
+        tmp_root = Path(tempfile.mkdtemp(dir=self.temp_runs))
 
         # --- config: full copy so each process can mutate its own files freely ---
         shutil.copytree(self.data_dir / "config", tmp_root / "config")
@@ -627,7 +629,7 @@ def run_spotpy(
         writer.close()
 
     # # Generate standard plots
-    plot_results(results, optimizer.evaluation(), data_dir / "spotpy" / "plots")
+    plot_results(results, optimizer.evaluation(), data_dir / "Calibration" / "spotpy" / "plots")
 
     print(f"\nTensorBoard logs saved to: {run_log_dir}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results")
