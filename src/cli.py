@@ -107,7 +107,7 @@ def calibration(
     troute_path = data_dir / "config" / "troute.yaml"
     observed_flow_path = data_root / f"{gage_id}_observed_flow_{start_date}_{end_date}.pkl"
     troute_output_path = data_dir / "outputs" / "troute" / get_troute_output_name(realization_path)
-    tensorboard_logdir = data_dir / "Calibration" / "tensorboard_logs"
+    tensorboard_logdir = data_dir / "calibration" / "tensorboard_logs"
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
@@ -140,6 +140,7 @@ def calibration(
     try:
         if rank == 0:
             print_calibration_configuration(args=args, size=size)
+            create_directories(data_dir=data_dir)
             prepare_config_merged_simulation(
                 data_dir,
                 realization_path=realization_path,

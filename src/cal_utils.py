@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 import spotpy
 import xarray as xr
-import yaml
 from spotpy.parameter import Uniform
 from tensorboardX import SummaryWriter
 
@@ -24,6 +23,7 @@ from plots import (
 )
 
 sys.path.append("/ngen/pyngiab")
+from flush_output import spotpy_stdout_control
 
 def update_parameters(file_path, param_updates, model_type_name):
     with open(file_path, "r") as f:
@@ -53,7 +53,6 @@ def parameters_available_bool(realization_path):
                 if "model_params" in model["params"].keys():
                     parameters_available = True
                     parameters.update(model["params"]["model_params"])
-                    print(f"Model: {model_type_name} has parameters available.")
                 else:
                     parameters_available = False
                     break
@@ -169,7 +168,6 @@ class NextGenSetup:
                     f"/ngen/ngen/data/config/{realization.name} /ngen/ngen/data/{partition_file} "
                 )
                 cmd = cmd_base + ngen_cmd
-                print(cmd)
                 # cmd = f"bmi-driver {self.data_dir} --hf {self.data_dir / 'config' / gpkg_path.name} --config {self.data_dir / 'config' / realization.name}"
                 subprocess.call(
                     cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
@@ -181,7 +179,6 @@ class NextGenSetup:
                     f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{realization.name}"
                 )
                 cmd = cmd_base + ngen_cmd
-                print(cmd)
                 # cmd = f"bmi-driver {self.data_dir} -j 1 --hf {self.data_dir / 'config' / gpkg_path.name} --config {self.data_dir / 'config' / realization.name}"
 
                 subprocess.call(
@@ -214,12 +211,10 @@ class NextGenSetup:
                 f"route_rs {tmp_root} {subset_gpkg} "
                 f"{temp_ngen_output_dir} {temp_troute_output_dir} --num-threads 31"
             )
-            subprocess.call(cmd, shell=True)
+            subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except:
             raise RuntimeError("T-route run failed.")
         rank = MPI.COMM_WORLD.rank
-
-        print(f"Rank {rank} completed troute simulation.")
 
         self.troute_output_path = temp_troute_output_dir / self.troute_output_path.name
         if not self.troute_output_path.exists():
@@ -277,10 +272,8 @@ class SpotpySetup:
         self.invert_objective = invert_objective
         self.model = model_setup
         self.data_dir = data_dir
-        self.calibration_dir = data_dir / "Calibration"
-        self.calibration_dir.mkdir(exist_ok=True)
-        self.temp_runs = self.calibration_dir / "Temp_Runs"
-        self.temp_runs.mkdir(exist_ok=True)
+        self.calibration_dir = data_dir / "calibration"
+        self.temp_runs = self.calibration_dir / "temp_runs"
         self.feature_id = feature_id
         self.run_id = 0
         self.writer = writer
@@ -311,8 +304,7 @@ class SpotpySetup:
         ]
 
         # Ensure spotpy directory exists
-        self.output_dir = Path(data_dir) / "Calibration" / "spotpy"
-        (self.output_dir / "plots").mkdir(parents=True, exist_ok=True)
+        self.output_dir = Path(data_dir) / "calibration" / "spotpy"
 
     def _create_process_temp_dir(self) -> Path:
         """
@@ -514,7 +506,7 @@ def run_spotpy(
     invert_objective = best_is_higher != algorithm_maximizes
 
     if tensorboard_logdir is None:
-        tensorboard_logdir = data_dir / "tensorboard_logs"
+        tensorboard_logdir = data_dir / "calibration" / "tensorboard_logs"
     run_name = f"{algorithm}_{objective_function}_{gage_id}_2017_10_02"
     run_log_dir = tensorboard_logdir / run_name
     writer = None
@@ -568,7 +560,8 @@ def run_spotpy(
             sampler = spotpy.algorithms.sceua(
                 optimizer, dbname=db_name, dbformat="csv", parallel="mpi"
             )
-            sampler.sample(repetitions, ngs=max((number_of_cores - 1), 5))
+            with spotpy_stdout_control(rank=rank, execution_mode=execution_mode):
+                sampler.sample(repetitions, ngs=max((number_of_cores - 1), 5))
 
     elif algorithm == "DDS":
         if execution_mode == "serial":
@@ -580,9 +573,11 @@ def run_spotpy(
 
         if parameters_available:
             parameters = np.array(parameters)
-            sampler.sample(repetitions, trials=int(dds_trials), x_initial=parameters)
+            with spotpy_stdout_control(rank=rank, execution_mode=execution_mode):
+                sampler.sample(repetitions, trials=int(dds_trials), x_initial=parameters)
         else:
-            sampler.sample(repetitions, trials=int(dds_trials))
+            with spotpy_stdout_control(rank=rank, execution_mode=execution_mode):
+                sampler.sample(repetitions, trials=int(dds_trials))
 
     results = sampler.getdata()
     # Final results to TensorBoard
@@ -629,7 +624,7 @@ def run_spotpy(
         writer.close()
 
     # # Generate standard plots
-    plot_results(results, optimizer.evaluation(), data_dir / "Calibration" / "spotpy" / "plots")
+    plot_results(results, optimizer.evaluation(), data_dir / "calibration" / "spotpy" / "plots")
 
     print(f"\nTensorBoard logs saved to: {run_log_dir}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results")

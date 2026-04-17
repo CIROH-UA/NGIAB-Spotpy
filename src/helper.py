@@ -134,6 +134,11 @@ def merge_and_prepare_forcing(data_dir, execution_mode, merge_area):
     return groups
 
 
+def create_directories(data_dir):
+    """Create necessary directories for Calibration before hand to avoid race conditions when multiple processes are trying to create the same directory at the same time."""
+    (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True, exist_ok=True)
+    (data_dir / "calibration" / "Temp_Runs").mkdir(parents=True, exist_ok=True)
+
 def restore_data_dir(data_dir, merge_catchment):
     """Removes merged geopackage,forcing data prepared for merged geopackage simulation. And removes
     extra tmp yaml and json files created by staggering multiprocessing calibration. Also removes partiton files."""
