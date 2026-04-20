@@ -24,7 +24,7 @@ def prepare_config_merged_simulation(data_dir, realization_path, troute_path, ex
     s.t. ngen and routing is done seperately"""
 
     gpkg_path = data_dir / "config" / f"{data_dir.name}_subset.gpkg"
-    print("Preparing configuration files for merged geopackage simulation...")
+    print("Preparing configuration files for merged geopackage simulation...\n\n")
     # removing routing parameter from the realization file
     with realization_path.open("r") as file:
         realization = json.load(file)
@@ -93,7 +93,7 @@ def merge_and_prepare_forcing(data_dir, execution_mode, merge_area):
     if len(partiton_files) > 0:
         os.system(f"rm -rf {data_dir}/partitions_*.json")
 
-    print("Merging geopackage and preparing forcing data...")
+    print("Merging geopackage and preparing forcing data...\n\n")
     # merge the geopackage
     hf = GeoPackage(original_gpkg)
     groups = group_catchments(original_gpkg, merge_area)
@@ -158,7 +158,7 @@ def restore_data_dir(data_dir, merge_catchment):
 
         # move original forcing file back to forcings directory
         os.system(f"mv {data_dir}/forcings.nc {forcing_path}")
-        print("Moved merged geopackage and forcing data used to archive...")
+        print("Moved merged geopackage and forcing data used to archive...\n\n")
 
     # remove partiton files
     os.system(f"rm -rf {data_dir}/partitions_*.json")

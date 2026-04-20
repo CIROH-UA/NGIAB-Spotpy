@@ -117,16 +117,16 @@ def calibration(
     if execution_mode.value == "serial" and size > 1:
         if rank == 0:
             raise ValueError(
-                "Warning: Running in serial mode but MPI detected multiple processes. For serial execution, run without mpirun."
+                "Warning: Running in serial mode but MPI detected multiple processes. For serial execution, run without mpirun.\n\n"
             )
 
     if execution_mode.value == "parallel" and size == 1:
         if rank == 0:
-            raise ValueError("Parallel mode requested, but only 1 MPI process detected.")
+            raise ValueError("Parallel mode requested, but only 1 MPI process detected.\n\n")
 
     if rank == 0:
         if not observed_flow_path.exists():
-            print(f"Retrieving observed streamflow for gage {gage_id}...")
+            print(f"\n\nRetrieving observed streamflow for gage {gage_id}...\n\n")
             process_usgs_streamflow(
                 gage_id,
                 start_date,
@@ -134,7 +134,7 @@ def calibration(
                 output_path=observed_flow_path,
             )
         else:
-            print(f"Using existing observed flow data: {observed_flow_path}")
+            print(f"\n\nUsing existing observed flow data: {observed_flow_path}\n\n")
 
     comm.Barrier()
     try:
@@ -198,7 +198,7 @@ def calibration(
             restore_data_dir(data_dir=data_dir, merge_catchment=merge_catchment)
 
     except Exception as e:
-        print(f"run_spotpy failed with error: {e} (Process rank {rank})")
+        print(f"run_spotpy failed with error: {e} (Process rank {rank})\n\n")
         traceback.print_exc()
 
     return 0

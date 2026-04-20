@@ -218,7 +218,7 @@ class NextGenSetup:
 
         self.troute_output_path = temp_troute_output_dir / self.troute_output_path.name
         if not self.troute_output_path.exists():
-            print(f"Rank {rank} doesn't have troute output file. ####")
+            print(f"Rank {rank} doesn't have troute output file. ####\n\n")
             raise RuntimeError("Nextgen Run failed. Couldn't find troute file.")
 
     def evaluate(self, tmp_root, feature_id):
@@ -586,10 +586,10 @@ def run_spotpy(
     print("*********CALIBRATION COMPLETE**********")
     print("***************************************")
     print("***************************************")
-    print(f"*******BEST PARAMETERS**********: {best_params}")
+    print(f"*******BEST PARAMETERS**********: {best_params}\n\n")
 
     best_params_value = best_params[0]
-    print(f"Updating the best parameters in the realization file: {realization_path}")
+    print(f"Updating the best parameters in the realization file: {realization_path}\n\n")
     param_map = {
         "b": best_params_value[0],
         "satpsi": best_params_value[1],
@@ -627,6 +627,6 @@ def run_spotpy(
     plot_results(results, optimizer.evaluation(), data_dir / "calibration" / "spotpy" / "plots")
 
     print(f"\nTensorBoard logs saved to: {run_log_dir}")
-    print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results")
+    print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results\n\n")
 
     return best_params
