@@ -266,6 +266,7 @@ class SpotpySetup:
         feature_id,
         invert_objective,
         objective_function,
+        calibration_dir,
         writer=None,
         objective_function_name=None,
         execution_mode="parallel",
@@ -275,7 +276,7 @@ class SpotpySetup:
         self.invert_objective = invert_objective
         self.model = model_setup
         self.data_dir = data_dir
-        self.calibration_dir = data_dir / "calibration"
+        self.calibration_dir = calibration_dir
         self.temp_runs = self.calibration_dir / "temp_runs"
         self.feature_id = feature_id
         self.run_id = 0
@@ -307,7 +308,7 @@ class SpotpySetup:
         ]
 
         # Ensure spotpy directory exists
-        self.output_dir = Path(data_dir) / "calibration" / "spotpy"
+        self.output_dir = calibration_dir / "spotpy"
 
     def _create_process_temp_dir(self) -> Path:
         """
@@ -380,6 +381,10 @@ class SpotpySetup:
         if len(simulation) != len(evaluation):
             raise ValueError("simulation and observation are not equal length")
 
+        if np.sum(evaluation) == 0:
+            #since streamflow cant be negative, this means all streamflow value here is 0
+            evaluation = evaluation + np.float64(1e-10)
+        
         objective_metric = self.obj_func(evaluation, simulation)
         if self.invert_objective:
             if self.objective_function_name == "KGE":
@@ -508,8 +513,10 @@ def run_spotpy(
 
     invert_objective = best_is_higher != algorithm_maximizes
 
+    calibration_dir = data_dir.parent.parent
+
     if tensorboard_logdir is None:
-        tensorboard_logdir = data_dir / "calibration" / "tensorboard_logs"
+        tensorboard_logdir = calibration_dir / "tensorboard_logs"
     run_name = f"{algorithm}_{objective_function}_{gage_id}_2017_10_02"
     run_log_dir = tensorboard_logdir / run_name
     writer = None
@@ -540,6 +547,7 @@ def run_spotpy(
         feature_id,
         invert_objective,
         obj_func,
+        calibration_dir,
         writer,
         objective_function,
         execution_mode,
@@ -592,6 +600,9 @@ def run_spotpy(
     print(f"*******BEST PARAMETERS**********: {best_params}\n\n")
 
     best_params_value = best_params[0]
+
+    #redefine realization path to the main data directory
+    realization_path = calibration_dir.parent / "config" / "realization.json"
     print(f"Updating the best parameters in the realization file: {realization_path}\n\n")
     param_map = {
         "b": best_params_value[0],
@@ -627,7 +638,7 @@ def run_spotpy(
         writer.close()
 
     # # Generate standard plots
-    plot_results(results, optimizer.evaluation(), data_dir / "calibration" / "spotpy" / "plots")
+    plot_results(results, optimizer.evaluation(), calibration_dir / "spotpy" / "plots")
 
     print(f"\nTensorBoard logs saved to: {run_log_dir}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results\n\n")
