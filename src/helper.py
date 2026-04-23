@@ -2,15 +2,19 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-
 from numpy import partition
 import pandas as pd
 import yaml
 from dataretrieval import nwis
+from mpi4py import MPI
 
 from merge_catchment.geopackage import GeoPackage
 from merge_catchment.interface import *
-
+import time
+import atexit
+import signal
+import sys
+from contextlib import contextmanager
 
 def get_troute_output_name(path):
     with Path(path).open("r") as file:
@@ -139,26 +143,30 @@ def create_directories(data_dir):
     (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True, exist_ok=True)
     (data_dir / "calibration" / "Temp_Runs").mkdir(parents=True, exist_ok=True)
 
-def restore_data_dir(data_dir, merge_catchment):
+def restore_data_dir(data_dir):
     """Removes merged geopackage,forcing data prepared for merged geopackage simulation. And removes
     extra tmp yaml and json files created by staggering multiprocessing calibration. Also removes partiton files."""
 
-    # instead of removing merged geopackage and forcing, create an archive directory and move those files there.
-    if merge_catchment:
-        merged_geopackage = data_dir / "config" / "merged.gpkg"
-        forcing_path = data_dir / "forcings" / "forcings.nc"
+    #restore .bak files 
 
+    bak_files = list((data_dir / "config").glob("*.bak"))
+    for bak_file in bak_files:
+        restore(bak_file)
+
+    merged_geopackage = data_dir / "config" / "merged.gpkg"
+
+    if merged_geopackage.exists():
+        forcing_path = data_dir / "forcings" / "forcings.nc"
         archive_dir = data_dir / "Calibration"/ "archive"
         archive_dir.mkdir(exist_ok=True)
+        os.system(f"mv {merged_geopackage} {archive_dir}")
 
-        if merged_geopackage.exists():
-            os.system(f"mv {merged_geopackage} {archive_dir}")
         if forcing_path.exists():
             os.system(f"mv {forcing_path} {archive_dir}")
 
         # move original forcing file back to forcings directory
         os.system(f"mv {data_dir}/forcings.nc {forcing_path}")
-        print("Moved merged geopackage and forcing data used to archive...\n\n")
+        print("Moved merged geopackage and forcing data used to archive\n\n")
 
     # remove partiton files
     os.system(f"rm -rf {data_dir}/partitions_*.json")
@@ -187,18 +195,30 @@ def process_usgs_streamflow(site, start, end, output_path=None):
     adjusted_start = start.strftime("%Y-%m-%d")
     adjusted_end = end.strftime("%Y-%m-%d")
 
-    try:
-        dfo_usgs = nwis.get_record(sites=site, service="iv", start=adjusted_start, end=adjusted_end)
-        dfo_usgs.index = pd.to_datetime(dfo_usgs.index)
-        dfo_usgs["Time"] = dfo_usgs.index.floor("h")
-        dfo_usgs["00060"] = pd.to_numeric(dfo_usgs["00060"], errors="coerce")
-        dfo_usgs_hr = dfo_usgs.groupby("Time")["00060"].mean().reset_index()
-        dfo_usgs_hr["values"] = dfo_usgs_hr["00060"] / 35.3147
-        dfo_usgs_hr = dfo_usgs_hr[["Time", "values"]]
-        # interpolate missing values
-        dfo_usgs_hr["values"] = dfo_usgs_hr["values"].interpolate(method="linear")
-    except:
-        raise RuntimeError("There is no streamflow data for the provided gage!")
+    for attempt in range(1, 11):
+        try:
+            dfo_usgs = nwis.get_record(sites=site, service="iv", start=adjusted_start, end=adjusted_end)
+            dfo_usgs.index = pd.to_datetime(dfo_usgs.index)
+            dfo_usgs["Time"] = dfo_usgs.index.floor("h")
+            dfo_usgs["00060"] = pd.to_numeric(dfo_usgs["00060"], errors="coerce")
+            dfo_usgs_hr = dfo_usgs.groupby("Time")["00060"].mean().reset_index()
+            dfo_usgs_hr["values"] = dfo_usgs_hr["00060"] / 35.3147
+            dfo_usgs_hr = dfo_usgs_hr[["Time", "values"]]
+            dfo_usgs_hr["values"] = dfo_usgs_hr["values"].interpolate(method="linear")
+            break 
+        except Exception as e:
+            print(f"Attempt {attempt}/10: Failed to retrieve data — {e}. Retrying in 2 seconds...")
+            time.sleep(2)
+    else:
+        print("Failed to retrieve data after 10 attempts. No data may be available for this gage/period.")
+        MPI.COMM_WORLD.Abort(0)
+
+    # Check that returned data covers the full requested time period
+    if dfo_usgs_hr["Time"].min().tz_localize(None) > start or dfo_usgs_hr["Time"].max().tz_localize(None) < end:
+        print("Data from NWIS does not cover the full time period. Check gage data availability.")
+        MPI.COMM_WORLD.Abort(0)
+
     if output_path:
         dfo_usgs_hr.to_pickle(Path(output_path))
+
     return dfo_usgs_hr

@@ -139,7 +139,6 @@ def calibration(
     comm.Barrier()
     try:
         if rank == 0:
-            print_calibration_configuration(args=args, size=size)
             create_directories(data_dir=data_dir)
             prepare_config_merged_simulation(
                 data_dir,
@@ -153,7 +152,7 @@ def calibration(
                     execution_mode=execution_mode.value,
                     merge_area=float(merge_area),
                 )
-
+            print_calibration_configuration(args=args, size=size)       
         comm.Barrier()
         groups = comm.bcast(groups, root=0)
         feature_id = int(get_feature_id(data_dir))
@@ -195,10 +194,11 @@ def calibration(
             print("\nTo view TensorBoard results, run:")
             print(f"tensorboard --logdir={tensorboard_logdir}")
             print(f"{'=' * 60}\n")
-            restore_data_dir(data_dir=data_dir, merge_catchment=merge_catchment)
+            restore_data_dir(data_dir=data_dir)
 
     except Exception as e:
         print(f"run_spotpy failed with error: {e} (Process rank {rank})\n\n")
+        restore_data_dir(data_dir=data_dir)
         traceback.print_exc()
 
     return 0

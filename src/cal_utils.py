@@ -14,6 +14,7 @@ import spotpy
 import xarray as xr
 from spotpy.parameter import Uniform
 from tensorboardX import SummaryWriter
+from helper import restore_data_dir
 
 from plots import (
     plot_bestmodelrun,
@@ -153,6 +154,7 @@ class NextGenSetup:
         self, tmp_root, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir, groups
     ):
         # running nextgen simulation ro get lateral flows
+        rank = MPI.COMM_WORLD.rank
         if self.merge_catchment:
             gpkg_path = Path("/ngen/ngen/data/config/merged.gpkg")
         else:
@@ -168,10 +170,7 @@ class NextGenSetup:
                     f"/ngen/ngen/data/config/{realization.name} /ngen/ngen/data/{partition_file} "
                 )
                 cmd = cmd_base + ngen_cmd
-                # cmd = f"bmi-driver {self.data_dir} --hf {self.data_dir / 'config' / gpkg_path.name} --config {self.data_dir / 'config' / realization.name}"
-                subprocess.call(
-                    cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
+                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
 
             else:
                 cmd_base = f"docker run --rm --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {tmp_root}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
@@ -181,11 +180,13 @@ class NextGenSetup:
                 cmd = cmd_base + ngen_cmd
                 # cmd = f"bmi-driver {self.data_dir} -j 1 --hf {self.data_dir / 'config' / gpkg_path.name} --config {self.data_dir / 'config' / realization.name}"
 
-                subprocess.call(
-                    cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                subprocess.run(
+                    cmd, shell=True, capture_output=True, text=True, check=True
                 )
-        except:
-            raise RuntimeError("Next Gen Simulation failed.")
+        except subprocess.CalledProcessError as e:
+            print(f"Rank {rank} failed to run ngen simulation.")
+            restore_data_dir(data_dir=self.data_dir)
+            MPI.COMM_WORLD.Abort(rank)
 
         if self.merge_catchment:
             # create symbolic link for actual lateral files to merged lateral files if merged catchment is true
@@ -211,15 +212,17 @@ class NextGenSetup:
                 f"route_rs {tmp_root} {subset_gpkg} "
                 f"{temp_ngen_output_dir} {temp_troute_output_dir} --num-threads 31"
             )
-            subprocess.call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except:
-            raise RuntimeError("T-route run failed.")
-        rank = MPI.COMM_WORLD.rank
-
+            subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Rank {rank} failed to run troute simulation.")
+            restore_data_dir(data_dir=self.data_dir)
+            MPI.COMM_WORLD.Abort(rank)
+        
         self.troute_output_path = temp_troute_output_dir / self.troute_output_path.name
         if not self.troute_output_path.exists():
             print(f"Rank {rank} doesn't have troute output file. ####\n\n")
-            raise RuntimeError("Nextgen Run failed. Couldn't find troute file.")
+            restore_data_dir(data_dir=self.data_dir)
+            MPI.COMM_WORLD.Abort(rank)
 
     def evaluate(self, tmp_root, feature_id):
         ds = xr.open_dataset(self.troute_output_path)
