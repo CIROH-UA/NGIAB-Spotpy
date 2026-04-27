@@ -46,7 +46,7 @@ def group_catchments(hf_path: Path, target_area: float = 330.0):
             upstreams.append(id)
             divides[toid]["upstreams"] = upstreams
         except KeyError:
-            print(f"no downstream found for {toid}")
+            print(f"no downstream found for {toid}\n\n")
 
     divides = calculate_upstream_area(divides, set(divides.keys()))
     merges = []
@@ -80,7 +80,7 @@ def group_catchments(hf_path: Path, target_area: float = 330.0):
         # recalculate upstream area t rerun
     # one final merge to pick up stragglers
     merges.append(list(divides.keys()))
-    print(f"{len(merges)} cats remaining")
+    # print(f"{len(merges)} cats remaining")
     return merges
 
 

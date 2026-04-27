@@ -1,138 +1,209 @@
-import argparse
+from enum import Enum
 from pathlib import Path
-
+from types import SimpleNamespace
+from typing import Annotated
 from mpi4py import MPI
-
+import typer
+import traceback
 from cal_utils import run_spotpy
 from helper import *
+
+
+class Algorithm(str, Enum):
+    SCE = "SCE"
+    DDS = "DDS"
+
+
+class ObjectiveFunction(str, Enum):
+    KGE = "KGE"
+    RMSE = "RMSE"
+
+
+class ExecutionMode(str, Enum):
+    SERIAL = "serial"
+    PARALLEL = "parallel"
+
+
+app = typer.Typer(help="Run SPOTPY calibration for NextGen hydrologic model")
 
 
 def str_to_bool(value):
     if isinstance(value, bool):
         return value
+    value = str(value)
     if value.lower() in ("yes", "true", "t", "y", "1"):
         return True
-    elif value.lower() in ("no", "false", "f", "n", "0"):
+    if value.lower() in ("no", "false", "f", "n", "0"):
         return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected.")
+    raise typer.BadParameter("Boolean value expected.")
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Run SPOTPY calibration for NextGen hydrologic model")
-    
-    # Required arguments
-    parser.add_argument("--gage_id", type=str, required=True, help="USGS gage ID")
-    parser.add_argument("--start_date", type=str, required=True, help="Start date (YYYY-MM-DD)")
-    parser.add_argument("--end_date", type=str, required=True, help="End date (YYYY-MM-DD)")
-    parser.add_argument("--training_start_date", type=str, required=True, help="Training start date (YYYY-MM-DD)")
-    parser.add_argument("--data_root", type=str, required=True, help="Root directory for data")
-    
-    # Optional arguments
-    parser.add_argument("--algorithm", type=str, default="DDS", choices=["SCE", "DDS"], help="Optimization algorithm")
-    parser.add_argument("--objective_function", type=str, default="KGE", choices=["KGE", "RMSE"], help="Objective function")
-    parser.add_argument("--repetitions", type=int, default=100, help="Number of repetitions/iterations")
-    parser.add_argument("--dds_trials", type=int, default=1, help="DDS trials (only used if algorithm=DDS)")
-    parser.add_argument("--execution_mode", type=str, default="parallel", choices=["serial", "parallel"], help="Serial or parallel execution")
-    parser.add_argument("--merge_catchment", type=str, default=True, help="Whether to merge catchments for calibration")
-    parser.add_argument("--merge_area", type=float, default=330, help="The catchment area to merge the divides in square miles")
-    
-    args = parser.parse_args()
-    args.merge_catchment = str_to_bool(args.merge_catchment)
- 
-    # Setup paths
-    realization_path = f"{args.data_root}/gage-{args.gage_id}/config/realization.json"
-    troute_path = f"{args.data_root}/gage-{args.gage_id}/config/troute.yaml"
-    observed_flow_path = f"{args.data_root}/{args.gage_id}_observed_flow_{args.start_date}_{args.end_date}.pkl"
-    troute_output_path = (
-        f"{args.data_root}/gage-{args.gage_id}/outputs/troute/{get_troute_output_name(realization_path)}"
+
+@app.command()
+def calibration(
+    gage_id: Annotated[
+        str, typer.Option("--gage_id", help="USGS gage ID")
+    ],
+    start_date: Annotated[
+        str, typer.Option("--start_date", help="Start date (YYYY-MM-DD)")
+    ],
+    end_date: Annotated[
+        str, typer.Option("--end_date", help="End date (YYYY-MM-DD)")
+    ],
+    training_start_date: Annotated[
+        str,
+        typer.Option("--training_start_date", help="Training start date (YYYY-MM-DD)"),
+    ],
+    data_root: Annotated[
+        Path, typer.Option("--data_root", help="Root directory for data")
+    ],
+    algorithm: Annotated[
+        Algorithm, typer.Option("--algorithm", help="Optimization algorithm")
+    ] = Algorithm.DDS,
+    objective_function: Annotated[
+        ObjectiveFunction, typer.Option("--objective_function", help="Objective function")
+    ] = ObjectiveFunction.KGE,
+    repetitions: Annotated[
+        int, typer.Option("--repetitions", help="Number of repetitions/iterations")
+    ] = 100,
+    dds_trials: Annotated[
+        int, typer.Option("--dds_trials", help="DDS trials (only used if algorithm=DDS)")
+    ] = 1,
+    execution_mode: Annotated[
+        ExecutionMode, typer.Option("--execution_mode", help="Serial or parallel execution")
+    ] = ExecutionMode.PARALLEL,
+    merge_catchment: Annotated[
+        str,
+        typer.Option("--merge_catchment", help="Whether to merge catchments for calibration"),
+    ] = "True",
+    merge_area: Annotated[
+        float,
+        typer.Option(
+            "--merge_area",
+            help="The catchment area to merge the divides in square miles",
+        ),
+    ] = 330,
+) -> int:
+    data_root = data_root.expanduser()
+    merge_catchment = str_to_bool(merge_catchment) # pyright: ignore[reportAssignmentType]
+
+    args = SimpleNamespace(
+        gage_id=gage_id,
+        start_date=start_date,
+        end_date=end_date,
+        training_start_date=training_start_date,
+        data_root=data_root,
+        algorithm=algorithm.value,
+        objective_function=objective_function.value,
+        repetitions=repetitions,
+        dds_trials=dds_trials,
+        execution_mode=execution_mode.value,
+        merge_catchment=merge_catchment,
+        merge_area=merge_area,
     )
-    data_dir = f"{args.data_root}/gage-{args.gage_id}"
-    tensorboard_logdir = f"{data_dir}/tensorboard_logs"
 
-    
-    # Check execution mode
+    data_dir = data_root / f"gage-{gage_id}"
+    observed_flow_path = data_root / f"{gage_id}_observed_flow_{start_date}_{end_date}.pkl"
+    troute_output_path = data_dir / "outputs" / "troute" / get_troute_output_name(data_dir / "config" / "realization.json") 
+    tensorboard_logdir = data_dir / "calibration" / "tensorboard_logs"
+
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
     groups = None
-    
-    if args.execution_mode == "serial" and size > 1:
-        if rank == 0:
-            raise ValueError("Warning: Running in serial mode but MPI detected multiple processes. For serial execution, run without mpirun.")
-    
-    if args.execution_mode == "parallel" and size == 1:
-        if rank == 0:
-            raise ValueError(f"Parallel mode requested, but only 1 MPI process detected.")
+    clone_root: Path | None = None
 
-    
-    # Optional: Retrieve and save observed flow
+    if execution_mode.value == "serial" and size > 1:
+        if rank == 0:
+            raise ValueError(
+                "Warning: Running in serial mode but MPI detected multiple processes. For serial execution, run without mpirun.\n\n"
+            )
+
+    if execution_mode.value == "parallel" and size == 1:
+        if rank == 0:
+            raise ValueError("Parallel mode requested, but only 1 MPI process detected.\n\n")
+
     if rank == 0:
-        if not Path(observed_flow_path).exists():
-            print(f"Retrieving observed streamflow for gage {args.gage_id}...")
-            process_usgs_streamflow(args.gage_id, args.start_date, args.end_date, output_path=observed_flow_path)
+        if not observed_flow_path.exists():
+            print(f"\n\nRetrieving observed streamflow for gage {gage_id}...\n\n")
+            process_usgs_streamflow(
+                gage_id,
+                start_date,
+                end_date,
+                output_path=observed_flow_path,
+            )
         else:
-            print(f"Using existing observed flow data: {observed_flow_path}")
-    
-    comm.Barrier()  # Ensure all processes wait until here, because realization file gets changed here and there might be some conflicts
+            print(f"\n\nUsing existing observed flow data: {observed_flow_path}\n\n")
+
+    comm.Barrier()
     try:
         if rank == 0:
-            print_calibration_configuration(args=args, size=size)
-            prepare_config_merged_simulation(data_dir, realization_path=realization_path, troute_path=troute_path, execution_mode=args.execution_mode)
-            if args.merge_catchment:
-                groups = merge_and_prepare_forcing(data_dir=data_dir, execution_mode=args.execution_mode, merge_area=float(args.merge_area))
-
-        # Synchronize all processes
+            clone_root = create_directories(data_dir)
+            prepare_config_merged_simulation(
+                clone_root,
+                execution_mode=execution_mode.value
+            )
+            if merge_catchment:
+                groups = merge_and_prepare_forcing(
+                    data_dir=clone_root,
+                    execution_mode=execution_mode.value,
+                    merge_area=float(merge_area),
+                )
+            print_calibration_configuration(args=args, size=size)       
         comm.Barrier()
+        clone_root = comm.bcast(clone_root, root=0)
         groups = comm.bcast(groups, root=0)
-        feature_id = int(get_feature_id(data_dir))
+        comm.Barrier()
+        feature_id = int(get_feature_id(clone_root))
         comm.Barrier()
 
         best_params = run_spotpy(
-            args.gage_id,
-            args.start_date,
-            args.end_date,
-            args.training_start_date,
+            gage_id,
+            start_date,
+            end_date,
+            training_start_date,
             observed_flow_path,
             troute_output_path,
-            data_dir,
+            clone_root ,
             feature_id,
             rank,
-            algorithm=args.algorithm,
-            objective_function=args.objective_function,
+            algorithm=algorithm.value,
+            objective_function=objective_function.value,
             groups=groups,
-            merge_catchment=args.merge_catchment,
-            repetitions=args.repetitions,
-            dds_trials=args.dds_trials,
-            execution_mode=args.execution_mode,
-            number_of_cores = size if args.execution_mode == "parallel" else 1,
+            merge_catchment=merge_catchment,
+            repetitions=repetitions,
+            dds_trials=dds_trials,
+            execution_mode=execution_mode.value,
+            number_of_cores=size if execution_mode.value == "parallel" else 1,
             tensorboard_logdir=tensorboard_logdir,
-        )       
-        # Only rank 0 saves results
+        )
+
         if rank == 0:
-        # Save the best parameters to a file
-            output_file = f"{data_dir}/spotpy/best_params.csv"
+            output_file = data_dir / "calibration" / "spotpy" / "best_params.csv"
             with open(output_file, "w") as file:
                 header = ",".join([name[3:] for name in best_params[0].dtype.names])
                 file.write(header + "\n")
                 values = ",".join([str(value) for value in best_params[0]])
                 file.write(values + "\n")
-            
-            print(f"\n{'='*60}")
-            print(f"CALIBRATION COMPLETE")
-            print(f"{'='*60}") 
+
+            print(f"\n{'=' * 60}")
+            print("CALIBRATION COMPLETE")
+            print(f"{'=' * 60}")
             print(f"Best parameters saved to: {output_file}")
-            print(f"\nTo view TensorBoard results, run:")
+            print("\nTo view TensorBoard results, run:")
             print(f"tensorboard --logdir={tensorboard_logdir}")
-            print(f"{'='*60}\n")
-            restore_data_dir(data_dir=data_dir, merge_catchment=args.merge_catchment)
-            #stops all other ongoing processes
-            MPI.COMM_WORLD.Abort(0)
+            print(f"{'=' * 60}\n")
+            restore_data_dir(clone_root)
 
     except Exception as e:
-        print(f"run_spotpy failed with error: {e} (Process rank {rank})")
-        import traceback
+        print(f"run_spotpy failed with error: {e} (Process rank {rank})\n\n")
+        restore_data_dir(clone_root)
         traceback.print_exc()
 
+    return 0
+
+
+def main() -> int:
+    app()
     return 0
 
 

@@ -2,6 +2,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from pathlib import Path
+from flush_output import suppress_spotpy_syntax_warnings
+
+suppress_spotpy_syntax_warnings()
 from spotpy.analyser import (
     get_maxlikeindex,
     get_parameternames,
@@ -58,12 +62,11 @@ def plot_parametertrace(
 
     # Handle output folder
     if output_folder:
-        import os
-
-        os.makedirs(output_folder, exist_ok=True)
-        save_path = os.path.join(output_folder, fig_name)
+        output_folder = Path(output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+        save_path = output_folder / fig_name
     else:
-        save_path = fig_name
+        save_path = Path(fig_name)
 
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f'The figure has been saved as "{save_path}"')
@@ -94,12 +97,11 @@ def plot_parameterInteraction(results, fig_name="ParameterInteraction.png", outp
 
     # Handle output folder
     if output_folder:
-        import os
-
-        os.makedirs(output_folder, exist_ok=True)
-        save_path = os.path.join(output_folder, fig_name)
+        output_folder = Path(output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+        save_path = output_folder / fig_name
     else:
-        save_path = fig_name
+        save_path = Path(fig_name)
 
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f'Parameter interaction plot saved as "{save_path}"')
@@ -154,22 +156,23 @@ def plot_bestmodelrun(results, evaluation, fig_name="Best_model_run.png", output
 
     # Handle output folder
     if output_folder:
-        import os
-
-        os.makedirs(output_folder, exist_ok=True)
-        save_path = os.path.join(output_folder, fig_name)
+        output_folder = Path(output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+        save_path = output_folder / fig_name
+        csv_path = output_folder / "Best_model_run.csv"
     else:
-        save_path = fig_name
+        save_path = Path(fig_name)
+        csv_path = Path("Best_model_run.csv")
 
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"A plot of the best model run has been saved as {save_path}")
 
-    csv_path = os.path.join(output_folder, "Best_model_run.csv")
     with open(csv_path, "w") as f:
         f.write("index,observed,simulated\n")
         for i, (obs, sim) in enumerate(zip(evaluation, best_simulation)):
             f.write(f"{i},{obs},{sim}\n")
     print(f"Observed vs best simulated saved to {csv_path}")
+
 
 # Optional: Add a new function for correlation heatmap
 def plot_parameter_correlation(results, fig_name="ParameterCorrelation.png", output_folder=None):
@@ -203,218 +206,11 @@ def plot_parameter_correlation(results, fig_name="ParameterCorrelation.png", out
 
     # Handle output folder
     if output_folder:
-        import os
-
-        os.makedirs(output_folder, exist_ok=True)
-        save_path = os.path.join(output_folder, fig_name)
+        output_folder = Path(output_folder)
+        output_folder.mkdir(parents=True, exist_ok=True)
+        save_path = output_folder / fig_name
     else:
-        save_path = fig_name
+        save_path = Path(fig_name)
 
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f'Correlation heatmap saved as "{save_path}"')
-
-
-def create_interactive_plots(
-    results, evaluation=None, output_folder=None, fig_name="spotpy_interactive.html"
-):
-    """Create all plots as interactive Bokeh visualizations in a single HTML file"""
-    import os
-
-    from bokeh.layouts import column, gridplot
-    from bokeh.models import ColumnDataSource, HoverTool, Panel, Tabs
-    from bokeh.palettes import Category10, RdYlBu11, Category20
-    from bokeh.plotting import figure, output_file, save
-    from bokeh.transform import linear_cmap
-
-    # Handle output folder
-    if output_folder:
-        os.makedirs(output_folder, exist_ok=True)
-        save_path = os.path.join(output_folder, fig_name)
-    else:
-        save_path = fig_name
-
-    output_file(save_path)
-
-    # Get data
-    parameternames = get_parameternames(results)
-    parameterdistribution = get_parameters(results)
-
-    # Create tabs for different plot types
-    tabs = []
-
-    # 1. Parameter Traces Tab
-    trace_plots = []
-    colors = Category10[10] if len(parameternames) <= 10 else Category20[20]
-
-    for i, name in enumerate(parameternames):
-        data = results["par" + name]
-        x_range = list(range(len(data)))
-
-        p = figure(
-            width=900,
-            height=250,
-            title=f"Parameter: {name}",
-            x_axis_label="Repetitions",
-            y_axis_label=name,
-            tools="pan,wheel_zoom,box_zoom,reset,save,hover",
-        )
-
-        source = ColumnDataSource(data=dict(x=x_range, y=data))
-        p.line("x", "y", source=source, line_width=2, color=colors[i % len(colors)])
-
-        # Add hover tool
-        hover = p.select_one(HoverTool)
-        hover.tooltips = [("Iteration", "@x"), (name, "@y{0.0000}")]
-
-        trace_plots.append(p)
-
-    trace_tab = Panel(child=column(*trace_plots), title="Parameter Traces")
-    tabs.append(trace_tab)
-
-    # 2. Parameter Interactions Tab
-    df = pd.DataFrame(np.asarray(parameterdistribution).T.tolist(), columns=parameternames)
-
-    # Create scatter matrix
-    scatter_plots = []
-    n_params = len(parameternames)
-
-    for i in range(n_params):
-        row_plots = []
-        for j in range(n_params):
-            if i == j:
-                # Diagonal - histogram
-                hist, edges = np.histogram(df[parameternames[i]], bins=30)
-                p = figure(width=200, height=200, tools="")
-                p.quad(
-                    top=hist,
-                    bottom=0,
-                    left=edges[:-1],
-                    right=edges[1:],
-                    fill_color="navy",
-                    line_color="white",
-                    alpha=0.5,
-                )
-                p.xaxis.axis_label = parameternames[i] if i == n_params - 1 else ""
-                p.yaxis.axis_label = "Frequency" if j == 0 else ""
-            else:
-                # Off-diagonal - scatter
-                p = figure(width=200, height=200, tools="pan,wheel_zoom,box_zoom,reset")
-                source = ColumnDataSource(
-                    data=dict(x=df[parameternames[j]], y=df[parameternames[i]])
-                )
-                p.circle("x", "y", size=3, color="navy", alpha=0.5, source=source)
-                p.xaxis.axis_label = parameternames[j] if i == n_params - 1 else ""
-                p.yaxis.axis_label = parameternames[i] if j == 0 else ""
-
-            row_plots.append(p)
-        scatter_plots.append(row_plots)
-
-    scatter_grid = gridplot(scatter_plots, toolbar_location="right")
-    interaction_tab = Panel(child=scatter_grid, title="Parameter Interactions")
-    tabs.append(interaction_tab)
-
-    # 3. Correlation Heatmap Tab
-    corr_matrix = df.corr()
-
-    # Prepare data for heatmap
-    x_names = []
-    y_names = []
-    colors_heat = []
-    alphas = []
-    corr_values = []
-
-    for i, xi in enumerate(parameternames):
-        for j, yj in enumerate(parameternames):
-            x_names.append(xi)
-            y_names.append(yj)
-            corr_val = corr_matrix.iloc[i, j]
-            corr_values.append(corr_val)
-            colors_heat.append(corr_val)
-            alphas.append(abs(corr_val))
-
-    source = ColumnDataSource(
-        data=dict(
-            x_names=x_names,
-            y_names=y_names,
-            colors=colors_heat,
-            alphas=alphas,
-            corr_values=corr_values,
-        )
-    )
-
-    p_heat = figure(
-        width=600,
-        height=600,
-        title="Parameter Correlation Matrix",
-        x_range=parameternames,
-        y_range=list(reversed(parameternames)),
-        toolbar_location="right",
-        tools="hover,save",
-    )
-
-    mapper = linear_cmap(field_name="colors", palette=RdYlBu11[::-1], low=-1, high=1)
-
-    p_heat.rect(
-        x="x_names",
-        y="y_names",
-        width=1,
-        height=1,
-        source=source,
-        line_color=None,
-        fill_color=mapper,
-    )
-
-    p_heat.xaxis.major_label_orientation = 45
-
-    hover = p_heat.select_one(HoverTool)
-    hover.tooltips = [("Parameters", "@x_names - @y_names"), ("Correlation", "@corr_values{0.00}")]
-
-    corr_tab = Panel(child=p_heat, title="Correlation Heatmap")
-    tabs.append(corr_tab)
-
-    # 4. Best Model Run Tab (if evaluation data provided)
-    if evaluation is not None:
-        # Clean evaluation data
-        evaluation = np.array(evaluation, dtype=float)
-        evaluation[evaluation == -9999] = np.nan
-
-        # Get best simulation
-        simulation_fields = get_simulation_fields(results)
-        bestindex, bestobjf = get_maxlikeindex(results, verbose=False)
-        best_simulation = list(results[simulation_fields][bestindex][0])
-
-        p_best = figure(
-            width=900,
-            height=500,
-            title=f"Best Model Run (Objective = {bestobjf:.2f})",
-            x_axis_label="Number of Observation Points",
-            y_axis_label="Value",
-            tools="pan,wheel_zoom,box_zoom,reset,save,hover",
-        )
-
-        # Plot observations
-        x_obs = list(range(len(evaluation)))
-        obs_source = ColumnDataSource(data=dict(x=x_obs, y=evaluation))
-        p_best.circle(
-            "x", "y", size=5, color="red", alpha=0.7, legend_label="Observations", source=obs_source
-        )
-
-        # Plot best simulation
-        x_sim = list(range(len(best_simulation)))
-        sim_source = ColumnDataSource(data=dict(x=x_sim, y=best_simulation))
-        p_best.line(
-            "x", "y", line_width=2, color="blue", legend_label="Best Simulation", source=sim_source
-        )
-
-        p_best.legend.location = "top_right"
-        p_best.legend.click_policy = "hide"
-
-        best_tab = Panel(child=p_best, title="Best Model Run")
-        tabs.append(best_tab)
-
-    # Create final layout with tabs
-    final_layout = Tabs(tabs=tabs)
-
-    # Save
-    save(final_layout)
-    print(f'Interactive plots saved as "{save_path}"')

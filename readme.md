@@ -41,9 +41,7 @@ This code:
 
 1. Clone the repository and enter it.
    ```bash
-   git clone https://github.com/slama0077/ayman_cal_SL.git
-   cd ayman_cal_SL
-   git checkout Parallel
+   git clone https://github.com/slama0077/NGIAB-Spotpy_SL.git 
    ```
 2. Install OpenMPI.
    - macOS:
@@ -225,12 +223,16 @@ python -m calibration --help
 
 ```text
 data_root/gage-{gage_id}/
-├── spotpy/
-│   ├── best_params.csv              # Best calibrated parameters
-│   ├── spotpy_results_<ALG>_<OBJ>.csv
-│   └── plots/                       # Optional diagnostic plots
-├── tensorboard_logs/
-│   └── <run_name>/
+├── calibration/
+│   ├── spotpy/
+│   │   ├── best_params.csv              # Best calibrated parameters
+│   │   ├── spotpy_results_<ALG>_<OBJ>.csv
+│   │   └── plots/                       # Optional diagnostic plots
+│   ├── tensorboard_logs/
+│   │   └── <run_name>/
+│   └── archive/
+│       ├── merged.gpkg                  # Merged geopackage (when merge_catchment=True)
+│       └── forcings.nc                  # Forcings used for merged simulation
 └── config/
     └── realization.json             # Updated with best parameters
 ```
@@ -243,16 +245,13 @@ One-row CSV containing the winning parameter set.
 
 Full optimization history, including tried parameter vectors and objective values. Use this file when you want to analyze convergence behavior.
 
-### Why You May See MPI Abort Text
-
-You may see output like `MPI_ABORT was invoked...` near the end. In this codebase, that message is expected during shutdown and does not automatically indicate calibration failure.
 
 ## Monitoring Progress
 
 Run TensorBoard in another terminal:
 
 ```bash
-tensorboard --logdir=/path/to/data_root/gage-{gage_id}/tensorboard_logs
+tensorboard --logdir=/path/to/data_root/gage-{gage_id}/calibration/tensorboard_logs
 ```
 
 Then open: `http://localhost:6006`
@@ -313,15 +312,23 @@ USGS portal: <https://waterdata.usgs.gov/nwis>
 ### Parallel Calibration
 
 <p align="center">
-  <img src="workflow/parallel_calibration.png" width="500" height="1000">
+  <img src="docs/parallel_calibration.svg" >
 </p>
 
 ### Simulation and Evaluation
-
-<p align="center">
-  <img src="workflow/sim_and_eval.png" width="500" height="500">
-</p>
-
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart LR
+    A(Create temporary ngen & troute output directories) --> B
+    B[Create temporary config files] --> C
+    C[Update output path in config files] --> D
+    D[Docker ngen & troute simulation] --> E
+    E[Evaluation/Metric Calculation] --> F
+    F(Clean up temporary files and directories)
+```
 ## Additional Notes
 
 ### Algorithm Selection
