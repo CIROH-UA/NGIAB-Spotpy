@@ -155,11 +155,11 @@ def create_directories(data_dir):
     # (data_dir / "calibration" / "Temp_Runs").mkdir(parents=True, exist_ok=True)
 
     #just for sanity
-    if (data_dir / "calibration" / "temp_Runs").exists():
-        shutil.rmtree(data_dir / "calibration" / "temp_Runs")
+    if (data_dir / "calibration" / "temp_runs").exists():
+        shutil.rmtree(data_dir / "calibration" / "temp_runs")
 
     #create clone root diretory inside "Temp_Runs" to keep the main directory clean and untouched 
-    clone_root = data_dir / "calibration" / "temp_Runs" / f"{data_dir.name}"
+    clone_root = data_dir / "calibration" / "temp_runs" / f"{data_dir.name}"
     clone_root.mkdir(parents=True, exist_ok=True)
 
     # --- config: full copy so each process can mutate its own files freely ---
@@ -210,7 +210,7 @@ def restore_data_dir(data_dir):
     # # remove partiton files
     # os.system(f"rm -rf {data_dir}/partitions_*.json")
 
-    # remove temporary cloned run directory (created under calibration/Temp_Runs)
+    # remove temporary cloned run directory (created under calibration/temp_runs)
     temp_runs_dir = data_dir.parent
     if temp_runs_dir.exists():
         shutil.rmtree(temp_runs_dir, ignore_errors=True)

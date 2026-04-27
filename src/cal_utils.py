@@ -349,8 +349,10 @@ class SpotpySetup:
 
         #if a partition file exist, link them as well
         partition_file = next(self.data_dir.glob("*.json"), None)
+        
+        #do a cp instead
         if partition_file:
-            os.link(partition_file, tmp_root / partition_file.name)
+            shutil.copy2(partition_file, tmp_root / partition_file.name)
 
         return tmp_root
 

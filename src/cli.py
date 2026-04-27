@@ -178,7 +178,7 @@ def calibration(
         )
 
         if rank == 0:
-            output_file = data_dir / "Calibration" / "spotpy" / "best_params.csv"
+            output_file = data_dir / "calibration" / "spotpy" / "best_params.csv"
             with open(output_file, "w") as file:
                 header = ",".join([name[3:] for name in best_params[0].dtype.names])
                 file.write(header + "\n")
