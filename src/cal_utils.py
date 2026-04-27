@@ -10,6 +10,9 @@ import matplotlib.pyplot as plt
 import mpi4py.MPI as MPI
 import numpy as np
 import pandas as pd
+from flush_output import spotpy_stdout_control, suppress_spotpy_syntax_warnings
+
+suppress_spotpy_syntax_warnings()
 import spotpy
 import xarray as xr
 from spotpy.parameter import Uniform
@@ -24,7 +27,6 @@ from plots import (
 )
 
 sys.path.append("/ngen/pyngiab")
-from flush_output import spotpy_stdout_control
 
 def update_parameters(file_path, param_updates, model_type_name):
     with open(file_path, "r") as f:

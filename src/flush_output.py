@@ -1,8 +1,19 @@
 import io
-import re
-from contextlib import contextmanager, redirect_stdout
 import os
-import sys 
+import re
+import sys
+import warnings
+from contextlib import contextmanager, redirect_stdout
+
+
+def suppress_spotpy_syntax_warnings() -> None:
+    """Hide known Python 3.12 invalid-escape warnings emitted by spotpy."""
+    warnings.filterwarnings(
+        "ignore",
+        message=r"invalid escape sequence '\\[a-zA-Z]'",
+        category=SyntaxWarning,
+        module=r"spotpy\.(analyser|likelihoods)",
+    )
 
 class _LineFilteringStream(io.TextIOBase):
     def __init__(self, wrapped, drop_patterns: list[re.Pattern[str]]):

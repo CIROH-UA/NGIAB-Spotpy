@@ -3,6 +3,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from pathlib import Path
+from flush_output import suppress_spotpy_syntax_warnings
+
+suppress_spotpy_syntax_warnings()
 from spotpy.analyser import (
     get_maxlikeindex,
     get_parameternames,
