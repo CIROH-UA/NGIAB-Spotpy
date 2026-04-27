@@ -11,7 +11,7 @@ import mpi4py.MPI as MPI
 import numpy as np
 import pandas as pd
 from flush_output import spotpy_stdout_control, suppress_spotpy_syntax_warnings
-
+from datetime import datetime
 suppress_spotpy_syntax_warnings()
 import spotpy
 import xarray as xr
@@ -456,6 +456,7 @@ class SpotpySetup:
 
                 self.writer.add_figure("Residuals/Analysis", fig, self.run_id)
                 plt.close(fig)
+                self.writer.flush()
 
         self.run_id += 1
         return objective_metric
@@ -466,6 +467,46 @@ def plot_results(results, observation_data, output_dir):
     plot_parameterInteraction(results=results, output_folder=output_dir)
     plot_bestmodelrun(results=results, evaluation=observation_data, output_folder=output_dir)
     plot_parameter_correlation(results=results, output_folder=output_dir)
+
+
+def log_parameters_from_spotpy_csv(writer, csv_path: Path, param_names, step_offset: int = 0):
+    """
+    Log SPOTPY parameters from the CSV database after the calibration finishes.
+
+    SPOTPY's CSV format typically uses columns like:
+      - par<param_name>
+      - simulation_0, simulation_1, ...
+
+    We only load the parameter columns to avoid loading large simulation columns.
+    """
+    if writer is None:
+        return
+
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        print(f"[tensorboard] SPOTPY CSV not found: {csv_path}", file=sys.stderr)
+        return
+
+    par_cols = [f"par{name}" for name in param_names]
+    df = pd.read_csv(csv_path, usecols=lambda c: c in par_cols)
+
+    # Some runs/algorithms may omit columns; log only what exists.
+    existing_par_cols = [c for c in par_cols if c in df.columns]
+    if not existing_par_cols:
+        print(
+            f"[tensorboard] No parameter columns found in SPOTPY CSV: {csv_path}",
+            file=sys.stderr,
+        )
+        return
+
+    for i in range(len(df)):
+        step = step_offset + i
+        for name in param_names:
+            col = f"par{name}"
+            if col in df.columns:
+                writer.add_scalar(f"Parameters/{name}", float(df.at[i, col]), step)
+
+    writer.flush()
 
 
 # === Function to Run SPOTPY Calibration with TensorBoard ===
@@ -521,13 +562,18 @@ def run_spotpy(
 
     if tensorboard_logdir is None:
         tensorboard_logdir = calibration_dir / "tensorboard_logs"
-    run_name = f"{algorithm}_{objective_function}_{gage_id}_2017_10_02"
+    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M")
+    run_name = f"{algorithm}_{objective_function}_{gage_id}_{timestamp}"
     run_log_dir = tensorboard_logdir / run_name
     writer = None
     # Only let rank 0 create and own the TensorBoard writer.
     if rank == 0:
         os.makedirs(run_log_dir, exist_ok=True)
-        writer = SummaryWriter(log_dir=run_log_dir)
+        # Use aggressive flushing to reduce the chance of "missing" figures due to buffering.
+        try:
+            writer = SummaryWriter(log_dir=run_log_dir, max_queue=1, flush_secs=1)
+        except TypeError:
+            writer = SummaryWriter(log_dir=run_log_dir)
 
     # Ensure rank 0 creates the run directory before workers proceed.
     MPI.COMM_WORLD.Barrier()
@@ -565,7 +611,6 @@ def run_spotpy(
     # FIX ME: there are some issues with initial parameters (even with the case of calibrated parameters) not being in the range
     # so for now, parameters_available is set to false to avoid using them as initial parameters for DDS algorithm. This needs to
     # be fixed in the future to fully utilize the benefits of DDS algorithm.
-    # parameters_available = False
     # SCE hyperparameters
     if algorithm == "SCE":
         if execution_mode == "serial":
@@ -634,8 +679,13 @@ def run_spotpy(
     }
     update_parameters(realization_path, noah_param_updates, "NoahOWP")
 
+
     # # Log final best parameters
     if writer:
+        # Log the parameter traces for all iterations from the SPOTPY CSV database.
+        csv_path = Path(f"{db_name}.csv")
+        log_parameters_from_spotpy_csv(writer, csv_path, optimizer.param_names)
+
         for i, param_name in enumerate(optimizer.param_names):
             if i < len(best_params[0]):
                 writer.add_scalar(f"FinalBestParameters/{param_name}", best_params[0][i], 0)

@@ -234,7 +234,7 @@ def process_usgs_streamflow(site, start, end, output_path=None):
     adjusted_start = start.strftime("%Y-%m-%d")
     adjusted_end = end.strftime("%Y-%m-%d")
 
-    for attempt in range(1, 11):
+    for attempt in range(1, 6):
         try:
             dfo_usgs = nwis.get_record(sites=site, service="iv", start=adjusted_start, end=adjusted_end)
             dfo_usgs.index = pd.to_datetime(dfo_usgs.index)
@@ -253,7 +253,6 @@ def process_usgs_streamflow(site, start, end, output_path=None):
         MPI.COMM_WORLD.Abort(0)
 
     # Check that returned data covers the full requested time period
-    # breakpoint()
     # if dfo_usgs_hr["Time"].min().tz_localize(None) > start or dfo_usgs_hr["Time"].max().tz_localize(None) < end:
     #     print("Data from NWIS does not cover the full time period. Check gage data availability.")
     #     MPI.COMM_WORLD.Abort(0)
