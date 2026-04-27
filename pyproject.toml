@@ -23,6 +23,7 @@ dependencies = [
     "spotpy>=1.6.6",
     "tensorboardx>=2.6.4",
     "xarray>=2025.12.0",
+    "typer>=0.24.1"
 ]
 
 [dependency-groups]

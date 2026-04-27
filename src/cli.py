@@ -2,7 +2,6 @@ from enum import Enum
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated
-
 from mpi4py import MPI
 import typer
 import traceback

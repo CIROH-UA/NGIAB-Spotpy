@@ -2,18 +2,15 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
-import tempfile
-from numpy import partition
 import pandas as pd
 import yaml
 from dataretrieval import nwis
 from mpi4py import MPI
-
 from merge_catchment.geopackage import GeoPackage
 from merge_catchment.interface import *
 import time
 import shutil
-from contextlib import contextmanager
+
 
 def get_troute_output_name(path):
     with Path(path).open("r") as file:
@@ -178,8 +175,6 @@ def create_directories(data_dir):
     
     shutil.copy2(data_dir / "forcings" / "forcings.nc", forcings_dst / "forcings.nc")
 
-    #hardlink raw gridded forcing data as well to avoid duplication
-    os.link(data_dir / "forcings" / "raw_gridded_data.nc", forcings_dst / "raw_gridded_data.nc")
 
     # --- outputs: empty dirs ready for ngen / troute ---
     (clone_root / "outputs" / "ngen").mkdir(parents=True)
