@@ -449,13 +449,6 @@ def run_spotpy(
     # Final results to TensorBoard
     best_params = spotpy.analyser.get_best_parameterset(results, maximize=best_is_higher)
 
-    print("*********CALIBRATION COMPLETE**********")
-    print("***************************************")
-    print("***************************************")
-    print("***************************************")
-
-
-
     best_params_value = best_params[0]
 
     #redefine realization path to the main data directory
