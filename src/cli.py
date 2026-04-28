@@ -142,7 +142,7 @@ def calibration(
     try:
         if rank == 0:
             clone_root = create_directories(data_dir)
-            prepare_config_merged_simulation(
+            prepare_config(
                 clone_root,
                 execution_mode=execution_mode.value
             )

@@ -153,7 +153,7 @@ def get_troute_output_name(path: str | Path) -> str:
     return f"troute_output_{start_date.strftime('%Y%m%d%H%M')}.nc"
 
 
-def prepare_config_merged_simulation(data_dir: Path, execution_mode: str) -> None:
+def prepare_config(data_dir: Path, execution_mode: str) -> None:
     """This function prepares the realization_file and t-route file
     s.t. ngen and routing is done seperately"""
 
@@ -170,7 +170,7 @@ def prepare_config_merged_simulation(data_dir: Path, execution_mode: str) -> Non
         json.dump(realization, file, indent=4)
 
     # catchment routing should be done nexus routing is not an option for the merged geopackage
-    # this doesn't preserve identation, but that shouldn't be an issue for routing
+    # this doesn't preserve identation, but that shouldn't be an issue for the routing file
     with troute_path.open("r") as f:
         data = yaml.safe_load(f)
     data["compute_parameters"]["forcing_parameters"]["qlat_file_pattern_filter"] = "cat-*"
@@ -221,61 +221,81 @@ def merge_and_prepare_forcing(
 ) -> list[list[int]]:
     """Merges the geopackage, prepares forcing data, and creates partitions for the merged geopackage simulation."""
 
-    # prepare partitions before merging
+    #a better way to not flood the restore function with argument
+    global merge_area_string
+    merge_area_string = str(merge_area)
+
     original_gpkg = data_dir / "config" / f"{data_dir.name}_subset.gpkg"
     forcing_path = data_dir / "forcings" / "forcings.nc"
     merged_geopackage = data_dir / "config" / "merged.gpkg"
 
-    # remove existing partiton files if any
-    partiton_files = list(data_dir.glob("partitions_*.json"))
-    if len(partiton_files) > 0:
-        os.system(f"rm -rf {data_dir}/partitions_*.json")
-
-    print("Merging geopackage and preparing forcing data...\n\n")
-    # merge the geopackage
-    hf = GeoPackage(original_gpkg)
-    groups = group_catchments(original_gpkg, merge_area)
-    hf.merge(groups)
-    hf.save(merged_geopackage)
-
-    realization = data_dir / "config" / "realization.json"
-    troute = data_dir / "config" / "troute.yaml"
-    start, end = get_dates(realization)
-    backup(original_gpkg)
-
-    # move forcing file of the forcing directory just outside of the forcings folder so that new data prepared will be for the merged geopackage
-    os.system(f"mv {forcing_path} {data_dir}")
-
-    # rename merged geopackage to original in the folder
-    os.system(f"mv {merged_geopackage} {original_gpkg}")
-
-    backup(realization)
-    backup(troute)
-
-    #cat ~/.ngiab/preprocessor gives the path to the folder where preprocesor downloads the data
-    #so that path should be changed to the current data directory to prepare forcing data for the merged geopackage simulation
-    #but after the merged data is downlaoded, should be changed back to original path
-    
     #save the path stored in ~/.ngiab/preprocessor to a variable first
     with open(Path("~/.ngiab/preprocessor").expanduser(), "r") as f:
         preprocessor_path = f.read().strip()
     #change the path stored in ~/.ngiab/preprocessor to the current data directory
     os.system(f"echo {data_dir.parent} > ~/.ngiab/preprocessor")
-    
-    cmd = (
-        f"uvx -p 3.10 ngiab-prep -i {data_dir.name} -o {data_dir.name} --start {start} --end {end} -fr"
-    )
 
-    os.system(cmd)
 
-    # rename original geopackage back to merged in the folder
-    # with this, we will have both merged geopackage and the original one
-    os.system(f"mv {original_gpkg} {merged_geopackage}")
-    restore(original_gpkg)
+    realization = data_dir / "config" / "realization.json"
+    troute = data_dir / "config" / "troute.yaml"
+    start, end = get_dates(realization)
+
+    #back up these files because -r flag in preprocessing will alter the files
+    backup(realization)
+    backup(troute)
+
+    #both merged file exists, so just copy from the archive directory to avoid preprocessing
+    if (data_dir.parent.parent / "archive" / merge_area_string / "merged.gpkg").exists() and (data_dir.parent.parent / "archive" / merge_area_string / "forcings.nc").exists():
+        print(f"Found merged geopackage and forcing for merge_area {merge_area_string};so, using these merged files for calibration")
+        shutil.copy2(data_dir.parent.parent / "archive" / merge_area_string / "merged.gpkg", merged_geopackage)
+        shutil.copy2(data_dir.parent.parent / "archive" / merge_area_string / "forcings.nc", forcing_path)
+        cmd = (
+        f"uvx -p 3.10 ngiab-prep -i {data_dir.name} -o {data_dir.name} --start {start} --end {end} -r"
+        )
+        groups = group_catchments(original_gpkg, merge_area)
+        os.system(cmd)
+
+    else:
+        print("Merging geopackage and preparing forcing data...\n\n")
+        # merge the geopackage
+        hf = GeoPackage(original_gpkg)
+        groups = group_catchments(original_gpkg, merge_area)
+        hf.merge(groups)
+        hf.save(merged_geopackage)
+        backup(original_gpkg)
+
+        # move forcing file of the forcing directory just outside of the forcings folder so that new data prepared will be for the merged geopackage
+        os.system(f"mv {forcing_path} {data_dir}")
+
+        # rename merged geopackage to original in the folder
+        os.system(f"mv {merged_geopackage} {original_gpkg}")
+
+        #cat ~/.ngiab/preprocessor gives the path to the folder where preprocesor downloads the data
+        #so that path should be changed to the current data directory to prepare forcing data for the merged geopackage simulation
+        #but after the merged data is downlaoded, should be changed back to original path
+
+        
+        cmd = (
+            f"uvx -p 3.10 ngiab-prep -i {data_dir.name} -o {data_dir.name} --start {start} --end {end} -fr"
+        )
+
+        os.system(cmd)
+
+        # rename original geopackage back to merged in the folder
+        # with this, we will have both merged geopackage and the original one
+        os.system(f"mv {original_gpkg} {merged_geopackage}")
+        restore(original_gpkg)
+
     restore(realization)
     restore(troute)
 
+    #renaming the path back tro default
     os.system(f"echo {preprocessor_path} > ~/.ngiab/preprocessor")
+
+    # remove existing partiton files if any
+    partiton_files = list(data_dir.glob("partitions_*.json"))
+    if len(partiton_files) > 0:
+        os.system(f"rm -rf {data_dir}/partitions_*.json")
 
     # only create partitions if the execution mode is serial as the ngen simulation runs in parallel mode
     if execution_mode == "serial":
@@ -288,7 +308,6 @@ def merge_and_prepare_forcing(
 def create_directories(data_dir: Path) -> Path:
     """Create necessary directories for Calibration before hand to avoid race conditions when multiple processes are trying to create the same directory at the same time."""
     (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True, exist_ok=True)
-    # (data_dir / "calibration" / "Temp_Runs").mkdir(parents=True, exist_ok=True)
 
     #just for sanity
     if (data_dir / "calibration" / "temp_runs").exists():
@@ -330,10 +349,9 @@ def restore_data_dir(data_dir: Path) -> None:
 
     if merged_geopackage.exists():
         forcing_path = data_dir / "forcings" / "forcings.nc"
-        archive_dir = calibration_dir / "archive"
-        archive_dir.mkdir(exist_ok=True)
+        archive_dir = calibration_dir / "archive" / merge_area_string
+        archive_dir.mkdir(parents=True, exist_ok=True)
         os.system(f"mv {merged_geopackage} {archive_dir}")
-
         if forcing_path.exists():
             os.system(f"mv {forcing_path} {archive_dir}")
 
