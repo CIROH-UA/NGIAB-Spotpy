@@ -107,7 +107,7 @@ def plot_parameterInteraction(results, fig_name="ParameterInteraction.png", outp
     print(f'Parameter interaction plot saved as "{save_path}"')
 
 
-def plot_bestmodelrun(results, evaluation, fig_name="Best_model_run.png", output_folder=None):
+def plot_bestmodelrun(results, evaluation, objective_function, invert_objective, fig_name="Best_model_run.png", output_folder=None):
     """Plot best model run with seaborn styling"""
     # Set style for this plot
     sns.set_style("darkgrid")
@@ -128,6 +128,16 @@ def plot_bestmodelrun(results, evaluation, fig_name="Best_model_run.png", output
     simulation_fields = get_simulation_fields(results)
     bestindex, bestobjf = get_maxlikeindex(results, verbose=False)
     best_simulation = list(results[simulation_fields][bestindex][0])
+
+    #reversing what is done in the objective_function of spotpy
+    if invert_objective:
+        if objective_function == "KGE":
+            bestobjf = 1 - bestobjf
+        else:
+            bestobjf = -bestobjf
+    else:
+        if objective_function == "KGE":
+            bestobjf = bestobjf + 1
 
     # Plot best simulation with seaborn
     x_sim = range(len(best_simulation))
