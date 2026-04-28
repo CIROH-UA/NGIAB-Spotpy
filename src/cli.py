@@ -9,6 +9,10 @@ from cal_utils import run_spotpy
 from helper import *
 
 
+def set_calibration_params(params: dict | None) -> None:
+    global CALIBRATION_PARAMS
+    CALIBRATION_PARAMS = params
+
 class Algorithm(str, Enum):
     SCE = "SCE"
     DDS = "DDS"
@@ -148,7 +152,8 @@ def calibration(
                     execution_mode=execution_mode.value,
                     merge_area=float(merge_area),
                 )
-            print_calibration_configuration(args=args, size=size)       
+            print_calibration_configuration(args=args, size=size)  
+
         comm.Barrier()
         clone_root = comm.bcast(clone_root, root=0)
         groups = comm.bcast(groups, root=0)
@@ -170,6 +175,7 @@ def calibration(
             objective_function=objective_function.value,
             groups=groups,
             merge_catchment=merge_catchment,
+            calibration_params=CALIBRATION_PARAMS,
             repetitions=repetitions,
             dds_trials=dds_trials,
             execution_mode=execution_mode.value,
@@ -202,7 +208,7 @@ def calibration(
     return 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     app()
     return 0
 

@@ -10,7 +10,118 @@ from merge_catchment.geopackage import GeoPackage
 from merge_catchment.interface import *
 import time
 import shutil
+from collections import defaultdict
+from plots import (
+    plot_bestmodelrun,
+    plot_parameter_correlation,
+    plot_parameterInteraction,
+    plot_parametertrace,
+)
+import sys
 
+def parameters_available_bool(realization_path):
+    """If parameters already exist in the realization file, use them
+    as initial parameters. Only available for DDS algorithm."""
+    with open(realization_path, "r") as f:
+        config = json.load(f)
+
+    models_list = ["CFE", "NoahOWP"]
+    parameters_available = False
+    models_config = config["global"]["formulations"][0]["params"]["modules"]
+    parameters = {}
+    for model_type_name in models_list:
+        for model in models_config:
+            if model["params"]["model_type_name"] == model_type_name:
+                if "model_params" in model["params"].keys():
+                    parameters_available = True
+                    parameters.update(model["params"]["model_params"])
+                else:
+                    parameters_available = False
+                    break
+
+    if parameters_available:
+        param_names = [
+            "b",
+            "satpsi",
+            "satdk",
+            "maxsmc",
+            "refkdt",
+            "expon",
+            "slope",
+            "max_gw_storage",
+            "Kn",
+            "Klf",
+            "Cgw",
+            "MFSNO",
+            "MP",
+            "RSURF_EXP",
+            "SNOW_EMIS",
+            "CWP",
+            "VCMX25",
+            "RSURF_SNOW",
+            "SCAMAX",
+        ]
+        # just taking the parameters that are in param_names
+        parameters = [v for k, v in parameters.items() if k in param_names]
+
+    return parameters_available, parameters
+
+
+def log_parameters_from_spotpy_csv(writer, csv_path: Path, param_names, step_offset: int = 0):
+    """
+    Log SPOTPY parameters from the CSV database after the calibration finishes.
+    """
+    if writer is None:
+        return
+
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        print(f"[tensorboard] SPOTPY CSV not found: {csv_path}", file=sys.stderr)
+        return
+
+    par_cols = [f"par{name}" for name in param_names]
+    df = pd.read_csv(csv_path, usecols=lambda c: c in par_cols)
+    # Some runs/algorithms may omit columns; log only what exists.
+    existing_par_cols = [c for c in par_cols if c in df.columns]
+    if not existing_par_cols:
+        print(
+            f"[tensorboard] No parameter columns found in SPOTPY CSV: {csv_path}",
+            file=sys.stderr,
+        )
+        return
+
+    for i in range(len(df)):
+        step = step_offset + i
+        for name in param_names:
+            col = f"par{name}"
+            if col in df.columns:
+                writer.add_scalar(f"Parameters/{name}", float(df.at[i, col]), step)
+
+    writer.flush()
+
+def plot_results(results, observation_data, output_dir, objective_function, invert_objective):
+    plot_parametertrace(results=results, output_folder=output_dir)
+    plot_parameterInteraction(results=results, output_folder=output_dir)
+    plot_bestmodelrun(results=results, evaluation=observation_data, objective_function=objective_function, invert_objective=invert_objective, output_folder=output_dir)
+    plot_parameter_correlation(results=results, output_folder=output_dir)
+
+def _update_parameters(file_path: Path, param_updates: dict, model_type_name: str):
+    with open(file_path, "r") as f:
+        realization = json.load(f)
+    models = realization["global"]["formulations"][0]["params"]["modules"]
+    for model in models:
+        if model["params"]["model_type_name"] == model_type_name:
+            model["params"]["model_params"] = param_updates
+            break
+    with open(file_path, "w") as f:
+        json.dump(realization, f, indent=4)
+
+def write_config(realization_path_name, params, param_models):
+    grouped: dict[str, dict] = defaultdict(dict)
+    for name, value in zip(param_models.keys(), params):
+        grouped[param_models[name]][name] = value
+    for model_type_name, values in grouped.items():
+        _update_parameters(realization_path_name, values, model_type_name)
 
 def get_troute_output_name(path):
     with Path(path).open("r") as file:
@@ -188,9 +299,6 @@ def restore_data_dir(data_dir):
 
     #restore .bak files 
 
-    # bak_files = list((data_dir / "config").glob("*.bak"))
-    # for bak_file in bak_files:
-    #     restore(bak_file)
     calibration_dir = data_dir.parent.parent
     merged_geopackage = data_dir / "config" / "merged.gpkg"
 
@@ -202,13 +310,6 @@ def restore_data_dir(data_dir):
 
         if forcing_path.exists():
             os.system(f"mv {forcing_path} {archive_dir}")
-
-        # # move original forcing file back to forcings directory
-        # os.system(f"mv {data_dir}/forcings.nc {forcing_path}")
-        # print("Moved merged geopackage and forcing data used to archive\n\n")
-
-    # # remove partiton files
-    # os.system(f"rm -rf {data_dir}/partitions_*.json")
 
     # remove temporary cloned run directory (created under calibration/temp_runs)
     temp_runs_dir = data_dir.parent
@@ -251,11 +352,6 @@ def process_usgs_streamflow(site, start, end, output_path=None):
     else:
         print("Failed to retrieve data after 10 attempts. No data may be available for this gage/period.")
         MPI.COMM_WORLD.Abort(0)
-
-    # Check that returned data covers the full requested time period
-    # if dfo_usgs_hr["Time"].min().tz_localize(None) > start or dfo_usgs_hr["Time"].max().tz_localize(None) < end:
-    #     print("Data from NWIS does not cover the full time period. Check gage data availability.")
-    #     MPI.COMM_WORLD.Abort(0)
 
     if output_path:
         dfo_usgs_hr.to_pickle(Path(output_path))
