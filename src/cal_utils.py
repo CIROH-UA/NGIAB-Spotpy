@@ -1,11 +1,11 @@
-import json
+from __future__ import annotations
+
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
-
+from typing import Any, Mapping, Sequence
 import matplotlib.pyplot as plt
 import mpi4py.MPI as MPI
 import numpy as np
@@ -15,93 +15,24 @@ from datetime import datetime
 suppress_spotpy_syntax_warnings()
 import spotpy
 import xarray as xr
-from spotpy.parameter import Uniform
 from tensorboardX import SummaryWriter
-from helper import restore_data_dir
-
-from plots import (
-    plot_bestmodelrun,
-    plot_parameter_correlation,
-    plot_parameterInteraction,
-    plot_parametertrace,
-)
-
-sys.path.append("/ngen/pyngiab")
-
-def update_parameters(file_path, param_updates, model_type_name):
-    with open(file_path, "r") as f:
-        realization = json.load(f)
-    models = realization["global"]["formulations"][0]["params"]["modules"]
-    for model in models:
-        if model["params"]["model_type_name"] == model_type_name:
-            model["params"]["model_params"] = param_updates
-            break
-    with open(file_path, "w") as f:
-        json.dump(realization, f, indent=4)
-
-
-def parameters_available_bool(realization_path):
-    """If parameters already exist in the realization file, use them
-    as initial parameters. Only available for DDS algorithm."""
-    with open(realization_path, "r") as f:
-        config = json.load(f)
-
-    models_list = ["CFE", "NoahOWP"]
-    parameters_available = False
-    models_config = config["global"]["formulations"][0]["params"]["modules"]
-    parameters = {}
-    for model_type_name in models_list:
-        for model in models_config:
-            if model["params"]["model_type_name"] == model_type_name:
-                if "model_params" in model["params"].keys():
-                    parameters_available = True
-                    parameters.update(model["params"]["model_params"])
-                else:
-                    parameters_available = False
-                    break
-
-    if parameters_available:
-        param_names = [
-            "b",
-            "satpsi",
-            "satdk",
-            "maxsmc",
-            "refkdt",
-            "expon",
-            "slope",
-            "max_gw_storage",
-            "Kn",
-            "Klf",
-            "Cgw",
-            "MFSNO",
-            "MP",
-            "RSURF_EXP",
-            "SNOW_EMIS",
-            "CWP",
-            "VCMX25",
-            "RSURF_SNOW",
-            "SCAMAX",
-        ]
-        # just taking the parameters that are in param_names
-        parameters = [v for k, v in parameters.items() if k in param_names]
-
-    return parameters_available, parameters
-
+from helper import *
 
 # === Wrapper to Set Up NextGen Model Execution ===
 class NextGenSetup:
     def __init__(
         self,
-        gage_id,
-        start_date,
-        end_date,
-        training_start_date,
-        observed_flow_path,
-        troute_output_path,
-        data_dir,
-        groups,
-        merge_catchment,
-        execution_mode="parallel",
+        gage_id: str,
+        start_date: str,
+        end_date: str,
+        training_start_date: str,
+        observed_flow_path: str | Path,
+        troute_output_path: Path,
+        data_dir: Path,
+        groups: Any,
+        param_to_model: dict[str, str],
+        merge_catchment: bool,
+        execution_mode: str = "parallel",
     ):
         self.gage_id = gage_id
         self.training_start_date = pd.to_datetime(training_start_date)
@@ -117,44 +48,19 @@ class NextGenSetup:
         self.realization_path = data_dir / "config" / "realization.json"
         self.data_dir = data_dir
         self.groups = groups
+        self.param_to_model = param_to_model
         self.merge_catchment = merge_catchment
         self.execution_mode = execution_mode
-
-    def write_config(self, realization_path_name, params):
-        param_map = {
-            "b": params[0],
-            "satpsi": params[1],
-            "satdk": params[2],
-            "maxsmc": params[3],
-            "refkdt": params[4],
-            "expon": params[5],
-            "slope": params[6],
-            "max_gw_storage": params[7],
-            "Kn": params[8],
-            "Klf": params[9],
-            "Cgw": params[10],
-        }
-
-        update_parameters(realization_path_name, param_map, "CFE")
-
-        # Create updated NOAH parameters dictionary
-        noah_param_updates = {
-            "MFSNO": params[11],  # Pass float directly
-            "MP": params[12],
-            "RSURF_EXP": params[13],
-            "CWP": params[14],
-            "VCMX25": params[15],
-            "RSURF_SNOW": params[16],
-            "SCAMAX": params[17],
-        }
-
-        update_parameters(realization_path_name, noah_param_updates, "NoahOWP")
-
-
     
     def run_model(
-        self, tmp_root, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir, groups
-    ):
+        self,
+        tmp_root: Path,
+        realization: Path,
+        troute_yaml: Path,
+        temp_ngen_output_dir: Path,
+        temp_troute_output_dir: Path,
+        groups: Any,
+    ) -> None:
         # running nextgen simulation ro get lateral flows
         rank = MPI.COMM_WORLD.rank
         if self.merge_catchment:
@@ -226,7 +132,7 @@ class NextGenSetup:
             restore_data_dir(data_dir=self.data_dir)
             MPI.COMM_WORLD.Abort(rank)
 
-    def evaluate(self, tmp_root, feature_id):
+    def evaluate(self, tmp_root: Path, feature_id: int) -> np.ndarray:
         ds = xr.open_dataset(self.troute_output_path)
         simulated = ds["flow"].sel(feature_id=feature_id).values
         actual_start = min(self.training_start_date, self.observed.index[0])
@@ -238,40 +144,17 @@ class NextGenSetup:
 
 # === SPOTPY Setup Class for Calibration with TensorBoard ===
 class SpotpySetup:
-    # CFE model parameters
-    soil_params_b = Uniform(2.0, 15.0, optguess=4.05)
-    satpsi = Uniform(0.03, 0.955, optguess=0.355)
-    satdk = Uniform(0.0000001, 0.000726, optguess=0.00000338)  # hit min
-    maxsmc = Uniform(0.16, 0.59, optguess=0.439)  # hit max set to 0.8
-    refkdt = Uniform(0.1, 4.0, optguess=1.0)  ######new
-    expon = Uniform(1.0, 8.0, optguess=3.0)
-    slope = Uniform(0.0, 1.0, optguess=0.1)
-    max_gw_storage = Uniform(0.01, 0.25, optguess=0.05)  ######### new
-    K_nash_subsurface = Uniform(0.0, 1.0, optguess=0.03)
-    K_lf = Uniform(0.0, 1.0, optguess=0.01)
-    Cgw = Uniform(0.0000018, 0.0018, optguess=0.000018)
-
-    # # Additional NOAH OWP Modular parameters
-    MFSNO = Uniform(0.5, 4.0, optguess=2.0)  # multiplier on snowfall melt factor
-    MP = Uniform(3.6, 12.6, optguess=9.0)  # hit max
-    RSURF_EXP = Uniform(1.0, 6.0, optguess=5.0)  # hit max
-    # SNOW_EMIS = Uniform(0.90, 1.0)  # snow emissivity
-    CWP = Uniform(0.09, 0.36, optguess=0.18)
-    VCMX25 = Uniform(24.0, 112.0, optguess=52.2)
-    RSURF_SNOW = Uniform(0.136, 100.0, optguess=50.0)  # hit min
-    SCAMAX = Uniform(0.7, 1.0, optguess=0.9)
-
     def __init__(
         self,
-        model_setup,
-        data_dir,
-        feature_id,
-        invert_objective,
-        objective_function,
-        calibration_dir,
-        writer=None,
-        objective_function_name=None,
-        execution_mode="parallel",
+        model_setup: NextGenSetup,
+        data_dir: Path,
+        feature_id: int,
+        invert_objective: bool,
+        objective_function: Any,
+        calibration_dir: Path,
+        writer: Any = None,
+        objective_function_name: str | None = None,
+        execution_mode: str = "parallel",
     ):
         self.obj_func = objective_function
         self.objective_function_name = objective_function_name
@@ -285,29 +168,6 @@ class SpotpySetup:
         self.writer = writer
         self.execution_mode = execution_mode
         self.best_objective = float("inf") if not invert_objective else float("-inf")
-
-        # Get parameter names for logging
-        self.param_names = [
-            "soil_params_b",
-            "satpsi",
-            "satdk",
-            "maxsmc",
-            "refkdt",
-            "expon",
-            "slope",
-            "max_gw_storage",
-            "K_nash_subsurface",
-            "K_lf",
-            "Cgw",
-            "MFSNO",
-            "MP",
-            "RSURF_EXP",
-            # "SNOW_EMIS",
-            "CWP",
-            "VCMX25",
-            "RSURF_SNOW",
-            "SCAMAX",
-        ]
 
         # Ensure spotpy directory exists
         self.output_dir = calibration_dir / "spotpy"
@@ -359,7 +219,7 @@ class SpotpySetup:
         return tmp_root
 
 
-    def simulation(self, vector):
+    def simulation(self, vector: Sequence[float]) -> np.ndarray:
         self.current_params = vector
 
         tmp_root = self._create_process_temp_dir()
@@ -367,7 +227,7 @@ class SpotpySetup:
         troute_config_path = tmp_root / "config" / "troute.yaml"
         ngen_output_dir    = tmp_root / "outputs" / "ngen"
         troute_output_dir  = tmp_root / "outputs" / "troute"
-        self.model.write_config(realization_path, vector)
+        write_config(realization_path, vector, self.model.param_to_model)
         self.model.run_model(
             tmp_root,
             realization_path,
@@ -378,10 +238,10 @@ class SpotpySetup:
         )
         return self.model.evaluate(tmp_root, self.feature_id)
 
-    def evaluation(self):
+    def evaluation(self) -> np.ndarray:
         return self.model.observed.values.squeeze()[1:]
 
-    def objectivefunction(self, simulation, evaluation):
+    def objectivefunction(self, simulation: Sequence[float], evaluation: Sequence[float]) -> float:
         if len(simulation) != len(evaluation):
             raise ValueError("simulation and observation are not equal length")
 
@@ -410,15 +270,8 @@ class SpotpySetup:
             self.writer.add_scalar("Metrics/RMSE", rmse, self.run_id)
             self.writer.add_scalar("Metrics/Correlation", correlation, self.run_id)
 
-            # # Log parameters
-            # for i, param_name in enumerate(self.param_names):
-            #     if i < len(self.current_params):
-            #         self.writer.add_scalar(
-            #             f"Parameters/{param_name}", self.current_params[i], self.run_id
-            #         )
-
-            # Log hydrographs periodically (every 2 iterations)
-            if self.run_id % 2 == 0:
+            # Log hydrographs periodically (every 10 iterations)
+            if self.run_id % 10 == 0:
                 fig, ax = plt.subplots(figsize=(12, 6))
                 ax.plot(evaluation, label="Observed", color="black", linewidth=1.5)
                 ax.plot(simulation, label="Simulated", linestyle="--", alpha=0.8)
@@ -463,74 +316,38 @@ class SpotpySetup:
         return objective_metric
 
 
-def plot_results(results, observation_data, output_dir, objective_function, invert_objective):
-    plot_parametertrace(results=results, output_folder=output_dir)
-    plot_parameterInteraction(results=results, output_folder=output_dir)
-    plot_bestmodelrun(results=results, evaluation=observation_data, objective_function=objective_function, invert_objective=invert_objective, output_folder=output_dir)
-    plot_parameter_correlation(results=results, output_folder=output_dir)
-
-
-def log_parameters_from_spotpy_csv(writer, csv_path: Path, param_names, step_offset: int = 0):
-    """
-    Log SPOTPY parameters from the CSV database after the calibration finishes.
-
-    SPOTPY's CSV format typically uses columns like:
-      - par<param_name>
-      - simulation_0, simulation_1, ...
-
-    We only load the parameter columns to avoid loading large simulation columns.
-    """
-    if writer is None:
-        return
-
-    csv_path = Path(csv_path)
-    if not csv_path.exists():
-        print(f"[tensorboard] SPOTPY CSV not found: {csv_path}", file=sys.stderr)
-        return
-
-    par_cols = [f"par{name}" for name in param_names]
-    df = pd.read_csv(csv_path, usecols=lambda c: c in par_cols)
-
-    # Some runs/algorithms may omit columns; log only what exists.
-    existing_par_cols = [c for c in par_cols if c in df.columns]
-    if not existing_par_cols:
-        print(
-            f"[tensorboard] No parameter columns found in SPOTPY CSV: {csv_path}",
-            file=sys.stderr,
-        )
-        return
-
-    for i in range(len(df)):
-        step = step_offset + i
-        for name in param_names:
-            col = f"par{name}"
-            if col in df.columns:
-                writer.add_scalar(f"Parameters/{name}", float(df.at[i, col]), step)
-
-    writer.flush()
-
-
 # === Function to Run SPOTPY Calibration with TensorBoard ===
 def run_spotpy(
-    gage_id,
-    start_date,
-    end_date,
-    training_start_date,
-    observed_flow_path,
-    troute_output_path,
-    data_dir,
-    feature_id,
-    rank,
-    algorithm,
-    objective_function,
-    groups,
-    merge_catchment,
-    repetitions=25,
-    dds_trials=5,
-    execution_mode="parallel",
-    number_of_cores=4,
-    tensorboard_logdir=None,
-):
+    gage_id: str,
+    start_date: str,
+    end_date: str,
+    training_start_date: str,
+    observed_flow_path: str | Path,
+    troute_output_path: Path,
+    data_dir: Path,
+    feature_id: int,
+    rank: int,
+    algorithm: str,
+    objective_function: str,
+    groups: Any,
+    merge_catchment: bool,
+    calibration_params: Mapping[str, Mapping[str, Any]],
+    repetitions: int = 25,
+    dds_trials: int = 5,
+    execution_mode: str = "parallel",
+    number_of_cores: int = 4,
+    tensorboard_logdir: Path | None = None,
+) -> Any:
+    
+    param_to_model = {name: model for model, names in calibration_params.items() for name in names}
+    params_names_list = []
+    # Add spotpy parameters to the optimizer so spotpy can sample them.
+    # Doing it like this makes it easier to change and log parameter values.
+    for _, params in calibration_params.items():
+        for _name, _param in params.items():
+            setattr(SpotpySetup, _name, _param)
+            params_names_list.append(_name)
+
     # Model setup
     model_setup = NextGenSetup(
         gage_id,
@@ -541,9 +358,10 @@ def run_spotpy(
         troute_output_path,
         data_dir,
         groups,
+        param_to_model,
         merge_catchment=merge_catchment,
         execution_mode=execution_mode,
-    )
+    )  
 
     if objective_function == "KGE":
         best_is_higher = True
@@ -579,19 +397,6 @@ def run_spotpy(
     # Ensure rank 0 creates the run directory before workers proceed.
     MPI.COMM_WORLD.Barrier()
 
-    # Log hyperparameters
-    hparams = {
-        "algorithm": algorithm,
-        "objective_function": objective_function,
-        "repetitions": repetitions,
-        "gage_id": gage_id,
-        "start_date": str(start_date),
-        "end_date": str(end_date),
-    }
-    if algorithm == "DDS":
-        hparams["dds_trials"] = dds_trials
-
-    # writer.add_hparams(hparams, {"dummy": 0})  # TensorBoard requires at least one metric
     optimizer = SpotpySetup(
         model_setup,
         data_dir,
@@ -644,48 +449,16 @@ def run_spotpy(
     # Final results to TensorBoard
     best_params = spotpy.analyser.get_best_parameterset(results, maximize=best_is_higher)
 
-    print("*********CALIBRATION COMPLETE**********")
-    print("***************************************")
-    print("***************************************")
-    print(f"*******BEST PARAMETERS**********: {best_params}\n\n")
-
     best_params_value = best_params[0]
 
     #redefine realization path to the main data directory
     realization_path = calibration_dir.parent / "config" / "realization.json"
-    print(f"Updating the best parameters in the realization file: {realization_path}\n\n")
-    param_map = {
-        "b": best_params_value[0],
-        "satpsi": best_params_value[1],
-        "satdk": best_params_value[2],
-        "maxsmc": best_params_value[3],
-        "refkdt": best_params_value[4],
-        "expon": best_params_value[5],
-        "slope": best_params_value[6],
-        "max_gw_storage": best_params_value[7],
-        "Kn": best_params_value[8],
-        "Klf": best_params_value[9],
-        "Cgw": best_params_value[10],
-    }
-    update_parameters(realization_path, param_map, "CFE")
-    # Create updated NOAH parameters dictionary
-    noah_param_updates = {
-        "MFSNO": best_params_value[11],  # Pass float directly
-        "MP": best_params_value[12],
-        "RSURF_EXP": best_params_value[13],
-        "CWP": best_params_value[14],
-        "VCMX25": best_params_value[15],
-        "RSURF_SNOW": best_params_value[16],
-        "SCAMAX": best_params_value[17],
-    }
-    update_parameters(realization_path, noah_param_updates, "NoahOWP")
+    write_config(realization_path, best_params_value, param_to_model)
 
-
-    # # Log final best parameters
     if writer:
         # Log the parameter traces for all iterations from the SPOTPY CSV database.
         csv_path = Path(f"{db_name}.csv")
-        log_parameters_from_spotpy_csv(writer, csv_path, optimizer.param_names)
+        log_parameters_from_spotpy_csv(writer, csv_path, params_names_list)
         writer.close()
 
     # # Generate standard plots
