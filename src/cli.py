@@ -31,7 +31,7 @@ class ExecutionMode(str, Enum):
 app = typer.Typer(help="Run SPOTPY calibration for NextGen hydrologic model")
 
 
-def str_to_bool(value):
+def str_to_bool(value: object) -> bool:
     if isinstance(value, bool):
         return value
     value = str(value)

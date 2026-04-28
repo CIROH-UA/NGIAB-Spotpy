@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import io
 import os
 import re
 import sys
 import warnings
 from contextlib import contextmanager, redirect_stdout
+from typing import IO, Iterator
 
 
 def suppress_spotpy_syntax_warnings() -> None:
@@ -16,15 +19,15 @@ def suppress_spotpy_syntax_warnings() -> None:
     )
 
 class _LineFilteringStream(io.TextIOBase):
-    def __init__(self, wrapped, drop_patterns: list[re.Pattern[str]]):
-        self._wrapped = wrapped
+    def __init__(self, wrapped: IO[str], drop_patterns: list[re.Pattern[str]]):
+        self._wrapped: IO[str] = wrapped
         self._drop_patterns = drop_patterns
         self._buffer = ""
 
-    def writable(self):
+    def writable(self) -> bool:
         return True
 
-    def write(self, s):
+    def write(self, s: str) -> int:
         if not s:
             return 0
 
@@ -36,7 +39,7 @@ class _LineFilteringStream(io.TextIOBase):
             self._wrapped.write(f"{line}\n")
         return len(s)
 
-    def flush(self):
+    def flush(self) -> None:
         if self._buffer:
             line = self._buffer
             self._buffer = ""
@@ -46,7 +49,7 @@ class _LineFilteringStream(io.TextIOBase):
 
 
 @contextmanager
-def spotpy_stdout_control(*, rank: int, execution_mode: str):
+def spotpy_stdout_control(*, rank: int, execution_mode: str) -> Iterator[None]:
     """
     Reduce SPOTPY print noise in MPI runs without hiding useful progress output.
     - Non-root ranks: suppress all stdout (prevents interleaved clutter).

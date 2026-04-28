@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any, Mapping, Sequence
 import matplotlib.pyplot as plt
 import mpi4py.MPI as MPI
 import numpy as np
@@ -19,17 +22,17 @@ from helper import *
 class NextGenSetup:
     def __init__(
         self,
-        gage_id,
-        start_date,
-        end_date,
-        training_start_date,
-        observed_flow_path,
-        troute_output_path,
-        data_dir,
-        groups,
-        param_to_model,
-        merge_catchment,
-        execution_mode="parallel",
+        gage_id: str,
+        start_date: str,
+        end_date: str,
+        training_start_date: str,
+        observed_flow_path: str | Path,
+        troute_output_path: Path,
+        data_dir: Path,
+        groups: Any,
+        param_to_model: dict[str, str],
+        merge_catchment: bool,
+        execution_mode: str = "parallel",
     ):
         self.gage_id = gage_id
         self.training_start_date = pd.to_datetime(training_start_date)
@@ -50,8 +53,14 @@ class NextGenSetup:
         self.execution_mode = execution_mode
     
     def run_model(
-        self, tmp_root, realization, troute_yaml, temp_ngen_output_dir, temp_troute_output_dir, groups
-    ):
+        self,
+        tmp_root: Path,
+        realization: Path,
+        troute_yaml: Path,
+        temp_ngen_output_dir: Path,
+        temp_troute_output_dir: Path,
+        groups: Any,
+    ) -> None:
         # running nextgen simulation ro get lateral flows
         rank = MPI.COMM_WORLD.rank
         if self.merge_catchment:
@@ -123,7 +132,7 @@ class NextGenSetup:
             restore_data_dir(data_dir=self.data_dir)
             MPI.COMM_WORLD.Abort(rank)
 
-    def evaluate(self, tmp_root, feature_id):
+    def evaluate(self, tmp_root: Path, feature_id: int) -> np.ndarray:
         ds = xr.open_dataset(self.troute_output_path)
         simulated = ds["flow"].sel(feature_id=feature_id).values
         actual_start = min(self.training_start_date, self.observed.index[0])
@@ -137,15 +146,15 @@ class NextGenSetup:
 class SpotpySetup:
     def __init__(
         self,
-        model_setup,
-        data_dir,
-        feature_id,
-        invert_objective,
-        objective_function,
-        calibration_dir,
-        writer=None,
-        objective_function_name=None,
-        execution_mode="parallel",
+        model_setup: NextGenSetup,
+        data_dir: Path,
+        feature_id: int,
+        invert_objective: bool,
+        objective_function: Any,
+        calibration_dir: Path,
+        writer: Any = None,
+        objective_function_name: str | None = None,
+        execution_mode: str = "parallel",
     ):
         self.obj_func = objective_function
         self.objective_function_name = objective_function_name
@@ -210,7 +219,7 @@ class SpotpySetup:
         return tmp_root
 
 
-    def simulation(self, vector):
+    def simulation(self, vector: Sequence[float]) -> np.ndarray:
         self.current_params = vector
 
         tmp_root = self._create_process_temp_dir()
@@ -229,10 +238,10 @@ class SpotpySetup:
         )
         return self.model.evaluate(tmp_root, self.feature_id)
 
-    def evaluation(self):
+    def evaluation(self) -> np.ndarray:
         return self.model.observed.values.squeeze()[1:]
 
-    def objectivefunction(self, simulation, evaluation):
+    def objectivefunction(self, simulation: Sequence[float], evaluation: Sequence[float]) -> float:
         if len(simulation) != len(evaluation):
             raise ValueError("simulation and observation are not equal length")
 
@@ -309,26 +318,26 @@ class SpotpySetup:
 
 # === Function to Run SPOTPY Calibration with TensorBoard ===
 def run_spotpy(
-    gage_id,
-    start_date,
-    end_date,
-    training_start_date,
-    observed_flow_path,
-    troute_output_path,
-    data_dir,
-    feature_id,
-    rank,
-    algorithm,
-    objective_function,
-    groups,
-    merge_catchment,
-    calibration_params,
-    repetitions=25,
-    dds_trials=5,
-    execution_mode="parallel",
-    number_of_cores=4,
-    tensorboard_logdir=None,
-):
+    gage_id: str,
+    start_date: str,
+    end_date: str,
+    training_start_date: str,
+    observed_flow_path: str | Path,
+    troute_output_path: Path,
+    data_dir: Path,
+    feature_id: int,
+    rank: int,
+    algorithm: str,
+    objective_function: str,
+    groups: Any,
+    merge_catchment: bool,
+    calibration_params: Mapping[str, Mapping[str, Any]],
+    repetitions: int = 25,
+    dds_trials: int = 5,
+    execution_mode: str = "parallel",
+    number_of_cores: int = 4,
+    tensorboard_logdir: Path | None = None,
+) -> Any:
     
     param_to_model = {name: model for model, names in calibration_params.items() for name in names}
     params_names_list = []
@@ -443,7 +452,9 @@ def run_spotpy(
     print("*********CALIBRATION COMPLETE**********")
     print("***************************************")
     print("***************************************")
-    print(f"*******BEST PARAMETERS**********: {best_params}\n\n")
+    print("***************************************")
+
+
 
     best_params_value = best_params[0]
 

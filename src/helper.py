@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import json
 import os
+import sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import Any, DefaultDict, Iterable, Sequence
 import pandas as pd
 import yaml
 from dataretrieval import nwis
@@ -19,11 +23,14 @@ from plots import (
 )
 import sys
 
-def parameters_available_bool(realization_path):
+
+def parameters_available_bool(
+    realization_path: str | Path,
+) -> tuple[bool, list[float] | dict[str, Any]]:
     """If parameters already exist in the realization file, use them
     as initial parameters. Only available for DDS algorithm."""
     with open(realization_path, "r") as f:
-        config = json.load(f)
+        config: dict[str, Any] = json.load(f)
 
     models_list = ["CFE", "NoahOWP"]
     parameters_available = False
@@ -67,7 +74,9 @@ def parameters_available_bool(realization_path):
     return parameters_available, parameters
 
 
-def log_parameters_from_spotpy_csv(writer, csv_path: Path, param_names, step_offset: int = 0):
+def log_parameters_from_spotpy_csv(
+    writer: Any, csv_path: Path, param_names: Sequence[str], step_offset: int = 0
+) -> None:
     """
     Log SPOTPY parameters from the CSV database after the calibration finishes.
     """
@@ -99,15 +108,23 @@ def log_parameters_from_spotpy_csv(writer, csv_path: Path, param_names, step_off
 
     writer.flush()
 
-def plot_results(results, observation_data, output_dir, objective_function, invert_objective):
+
+def plot_results(
+    results: Any,
+    observation_data: Any,
+    output_dir: str | Path,
+    objective_function: str,
+    invert_objective: bool,
+) -> None:
     plot_parametertrace(results=results, output_folder=output_dir)
     plot_parameterInteraction(results=results, output_folder=output_dir)
     plot_bestmodelrun(results=results, evaluation=observation_data, objective_function=objective_function, invert_objective=invert_objective, output_folder=output_dir)
     plot_parameter_correlation(results=results, output_folder=output_dir)
 
-def _update_parameters(file_path: Path, param_updates: dict, model_type_name: str):
+
+def _update_parameters(file_path: Path, param_updates: dict[str, Any], model_type_name: str) -> None:
     with open(file_path, "r") as f:
-        realization = json.load(f)
+        realization: dict[str, Any] = json.load(f)
     models = realization["global"]["formulations"][0]["params"]["modules"]
     for model in models:
         if model["params"]["model_type_name"] == model_type_name:
@@ -116,21 +133,27 @@ def _update_parameters(file_path: Path, param_updates: dict, model_type_name: st
     with open(file_path, "w") as f:
         json.dump(realization, f, indent=4)
 
-def write_config(realization_path_name, params, param_models):
-    grouped: dict[str, dict] = defaultdict(dict)
-    for name, value in zip(param_models.keys(), params):
-        grouped[param_models[name]][name] = value
-    for model_type_name, values in grouped.items():
-        _update_parameters(realization_path_name, values, model_type_name)
 
-def get_troute_output_name(path):
+def write_config(
+    realization_path_name: str | Path,
+    params: Sequence[float],
+    param_models: dict[str, str],
+) -> None:
+    grouped: DefaultDict[str, dict[str, float]] = defaultdict(dict)
+    for name, value in zip(param_models.keys(), params, strict=False):
+        grouped[param_models[name]][name] = float(value)
+    for model_type_name, values in grouped.items():
+        _update_parameters(Path(realization_path_name), values, model_type_name)
+
+
+def get_troute_output_name(path: str | Path) -> str:
     with Path(path).open("r") as file:
-        realization = json.load(file)
+        realization: dict[str, Any] = json.load(file)
     start_date = datetime.strptime(realization["time"]["start_time"], "%Y-%m-%d %H:%M:%S")
     return f"troute_output_{start_date.strftime('%Y%m%d%H%M')}.nc"
 
 
-def prepare_config_merged_simulation(data_dir, execution_mode):
+def prepare_config_merged_simulation(data_dir: Path, execution_mode: str) -> None:
     """This function prepares the realization_file and t-route file
     s.t. ngen and routing is done seperately"""
 
@@ -140,7 +163,7 @@ def prepare_config_merged_simulation(data_dir, execution_mode):
     print("Preparing configuration files for merged geopackage simulation...\n\n")
     # removing routing parameter from the realization file
     with realization_path.open("r") as file:
-        realization = json.load(file)
+        realization: dict[str, Any] = json.load(file)
     if "routing" in realization.keys():
         realization.pop("routing", None)
     with realization_path.open("w") as file:
@@ -182,7 +205,7 @@ def print_calibration_configuration(args, size):
     print(f"{'=' * 60}\n")
 
 
-def get_partitions(data_dir, geopackage_path):
+def get_partitions(data_dir: Path, geopackage_path: Path) -> Path | None:
     size = os.cpu_count() - 1  # reserving one core for system processes
     partition_file = next(data_dir.glob(f"partitions_{size}.json"), None)
     if partition_file == None:
@@ -193,7 +216,9 @@ def get_partitions(data_dir, geopackage_path):
     return partition_file  # return last element to get largest partitions
 
 
-def merge_and_prepare_forcing(data_dir, execution_mode, merge_area):
+def merge_and_prepare_forcing(
+    data_dir: Path, execution_mode: str, merge_area: float
+) -> list[list[int]]:
     """Merges the geopackage, prepares forcing data, and creates partitions for the merged geopackage simulation."""
 
     # prepare partitions before merging
@@ -260,7 +285,7 @@ def merge_and_prepare_forcing(data_dir, execution_mode, merge_area):
     return groups
 
 
-def create_directories(data_dir):
+def create_directories(data_dir: Path) -> Path:
     """Create necessary directories for Calibration before hand to avoid race conditions when multiple processes are trying to create the same directory at the same time."""
     (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True, exist_ok=True)
     # (data_dir / "calibration" / "Temp_Runs").mkdir(parents=True, exist_ok=True)
@@ -293,7 +318,8 @@ def create_directories(data_dir):
 
     return clone_root
 
-def restore_data_dir(data_dir):
+
+def restore_data_dir(data_dir: Path) -> None:
     """Removes merged geopackage,forcing data prepared for merged geopackage simulation. And removes
     extra tmp yaml and json files created by staggering multiprocessing calibration. Also removes partiton files."""
 
@@ -317,7 +343,7 @@ def restore_data_dir(data_dir):
         shutil.rmtree(temp_runs_dir, ignore_errors=True)
 
 
-def get_feature_id(data_dir):
+def get_feature_id(data_dir: str | Path) -> str:
     folder = Path(data_dir)
     gpkg = folder / "config" / f"{folder.name}_subset.gpkg"
     with sqlite3.connect(gpkg) as conn:
@@ -329,7 +355,9 @@ def get_feature_id(data_dir):
 
 
 # === Utility Function to Retrieve and Preprocess USGS Streamflow ===
-def process_usgs_streamflow(site, start, end, output_path=None):
+def process_usgs_streamflow(
+    site: str, start: str, end: str, output_path: str | Path | None = None
+) -> pd.DataFrame:
     start = pd.to_datetime(start) - pd.Timedelta(days=1)
     end = pd.to_datetime(end) + pd.Timedelta(days=1)
     adjusted_start = start.strftime("%Y-%m-%d")

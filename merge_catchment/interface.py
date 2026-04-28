@@ -1,8 +1,15 @@
+from __future__ import annotations
+
 import json
 import sqlite3
 from pathlib import Path
+from typing import Any
 
-def calculate_upstream_area(divides, headwaters):
+
+DividesDict = dict[int, dict[str, Any]]
+
+
+def calculate_upstream_area(divides: DividesDict, headwaters: set[int]) -> DividesDict:
     for id in headwaters:
         toid = divides[id]["toid"]
         area = divides[id]["area"]
@@ -14,7 +21,7 @@ def calculate_upstream_area(divides, headwaters):
     return divides
 
 
-def recalculate_upstream_area(divides, start_point: int):
+def recalculate_upstream_area(divides: DividesDict, start_point: int) -> DividesDict:
     removed_area = divides[start_point]["upstream_area"]
     next_id = start_point
     while next_id in divides.keys():
@@ -24,10 +31,10 @@ def recalculate_upstream_area(divides, start_point: int):
     return divides
 
 
-def group_catchments(hf_path: Path, target_area: float = 330.0):
+def group_catchments(hf_path: Path, target_area: float = 330.0) -> list[list[int]]:
     with sqlite3.connect(hf_path) as conn:
         result = conn.execute("SELECT divide_id, toid, areasqkm FROM divides").fetchall()
-    divides = {}
+    divides: DividesDict = {}
     headwaters = set()
     for divide_id, nex_id, area in result:
         id = int(divide_id.split("-")[-1])
@@ -84,13 +91,13 @@ def group_catchments(hf_path: Path, target_area: float = 330.0):
     return merges
 
 
-def backup(original: Path):
+def backup(original: Path) -> None:
     backup_path = original.with_suffix(".bak")
     if original.exists() and not backup_path.exists():
         original.rename(f"{backup_path.expanduser().resolve().absolute()}")
 
 
-def restore(original: Path):
+def restore(original: Path) -> None:
     backup_path = original.with_suffix(".bak")
     if original.exists():
         original.unlink()
@@ -98,11 +105,10 @@ def restore(original: Path):
         backup_path.rename(f"{original.expanduser().resolve().absolute()}")
 
 
-def get_dates(realization: Path):
+def get_dates(realization: Path) -> tuple[str, str]:
     with open(realization, "r") as f:
-        realization = json.load(f)
+        realization: dict[str, Any] = json.load(f)
         return (
             realization["time"]["start_time"].split(" ")[0],
             realization["time"]["end_time"].split(" ")[0],
         )
-
