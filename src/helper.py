@@ -244,17 +244,24 @@ def merge_and_prepare_forcing(
     backup(realization)
     backup(troute)
 
+    #delete the forcing file
+    forcing_path.unlink()
+
     #both merged file exists, so just copy from the archive directory to avoid preprocessing
     if (data_dir.parent.parent / "archive" / merge_area_string / "merged.gpkg").exists() and (data_dir.parent.parent / "archive" / merge_area_string / "forcings.nc").exists():
-        print(f"Found merged geopackage and forcing for merge_area {merge_area_string};so, using these merged files for calibration")
+        print(f"Found merged geopackage and forcing for merge_area {merge_area_string};so, using these merged files for calibration\n\n")
+        groups = group_catchments(original_gpkg, merge_area)
         shutil.copy2(data_dir.parent.parent / "archive" / merge_area_string / "merged.gpkg", merged_geopackage)
         shutil.copy2(data_dir.parent.parent / "archive" / merge_area_string / "forcings.nc", forcing_path)
-        cmd = (
-        f"uvx -p 3.10 ngiab-prep -i {data_dir.name} -o {data_dir.name} --start {start} --end {end} -r"
-        )
-        groups = group_catchments(original_gpkg, merge_area)
-        os.system(cmd)
+        backup(original_gpkg)
 
+        # rename merged geopackage to original in the folder
+        os.system(f"mv {merged_geopackage} {original_gpkg}")
+        
+        cmd = (f"uvx -p 3.10 ngiab-prep -i {data_dir.name} -o {data_dir.name} --start {start} --end {end} -r")
+        os.system(cmd)
+        os.system(f"mv {original_gpkg} {merged_geopackage}")
+        
     else:
         print("Merging geopackage and preparing forcing data...\n\n")
         # merge the geopackage
@@ -264,17 +271,8 @@ def merge_and_prepare_forcing(
         hf.save(merged_geopackage)
         backup(original_gpkg)
 
-        # move forcing file of the forcing directory just outside of the forcings folder so that new data prepared will be for the merged geopackage
-        os.system(f"mv {forcing_path} {data_dir}")
-
         # rename merged geopackage to original in the folder
-        os.system(f"mv {merged_geopackage} {original_gpkg}")
-
-        #cat ~/.ngiab/preprocessor gives the path to the folder where preprocesor downloads the data
-        #so that path should be changed to the current data directory to prepare forcing data for the merged geopackage simulation
-        #but after the merged data is downlaoded, should be changed back to original path
-
-        
+        os.system(f"mv {merged_geopackage} {original_gpkg}")  
         cmd = (
             f"uvx -p 3.10 ngiab-prep -i {data_dir.name} -o {data_dir.name} --start {start} --end {end} -fr"
         )
@@ -284,8 +282,8 @@ def merge_and_prepare_forcing(
         # rename original geopackage back to merged in the folder
         # with this, we will have both merged geopackage and the original one
         os.system(f"mv {original_gpkg} {merged_geopackage}")
-        restore(original_gpkg)
-
+    
+    restore(original_gpkg)
     restore(realization)
     restore(troute)
 

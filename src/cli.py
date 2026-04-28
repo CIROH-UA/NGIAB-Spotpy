@@ -202,7 +202,7 @@ def calibration(
 
     except Exception as e:
         print(f"run_spotpy failed with error: {e} (Process rank {rank})\n\n")
-        restore_data_dir(clone_root)
+        # restore_data_dir(clone_root)
         traceback.print_exc()
 
     return 0
