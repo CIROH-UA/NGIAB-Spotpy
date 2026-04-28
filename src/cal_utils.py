@@ -390,14 +390,6 @@ class SpotpySetup:
             evaluation = evaluation + np.float64(1e-10)
         
         objective_metric = self.obj_func(evaluation, simulation)
-        if self.invert_objective:
-            if self.objective_function_name == "KGE":
-                objective_metric = 1 - objective_metric
-            else:
-                objective_metric = -objective_metric
-        else:
-            if self.objective_function_name == "KGE":
-                objective_metric = objective_metric - 1
 
         # Calculate additional metrics for TensorBoard
         rmse = spotpy.objectivefunctions.rmse(evaluation, simulation)
@@ -458,14 +450,23 @@ class SpotpySetup:
                 plt.close(fig)
                 self.writer.flush()
 
+        if self.invert_objective:
+            if self.objective_function_name == "KGE":
+                objective_metric = 1 - objective_metric
+            else:
+                objective_metric = -objective_metric
+        else:
+            if self.objective_function_name == "KGE":
+                objective_metric = objective_metric - 1
+
         self.run_id += 1
         return objective_metric
 
 
-def plot_results(results, observation_data, output_dir):
+def plot_results(results, observation_data, output_dir, objective_function, invert_objective):
     plot_parametertrace(results=results, output_folder=output_dir)
     plot_parameterInteraction(results=results, output_folder=output_dir)
-    plot_bestmodelrun(results=results, evaluation=observation_data, output_folder=output_dir)
+    plot_bestmodelrun(results=results, evaluation=observation_data, objective_function=objective_function, invert_objective=invert_objective, output_folder=output_dir)
     plot_parameter_correlation(results=results, output_folder=output_dir)
 
 
@@ -685,14 +686,10 @@ def run_spotpy(
         # Log the parameter traces for all iterations from the SPOTPY CSV database.
         csv_path = Path(f"{db_name}.csv")
         log_parameters_from_spotpy_csv(writer, csv_path, optimizer.param_names)
-
-        for i, param_name in enumerate(optimizer.param_names):
-            if i < len(best_params[0]):
-                writer.add_scalar(f"FinalBestParameters/{param_name}", best_params[0][i], 0)
         writer.close()
 
     # # Generate standard plots
-    plot_results(results, optimizer.evaluation(), calibration_dir / "spotpy" / "plots")
+    plot_results(results, optimizer.evaluation(), calibration_dir / "spotpy" / "plots", objective_function, invert_objective)
 
     print(f"\nTensorBoard logs saved to: {run_log_dir}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results\n\n")
