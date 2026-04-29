@@ -88,9 +88,7 @@ class NextGenSetup:
                 cmd = cmd_base + ngen_cmd
                 # cmd = f"bmi-driver {self.data_dir} -j 1 --hf {self.data_dir / 'config' / gpkg_path.name} --config {self.data_dir / 'config' / realization.name}"
 
-                subprocess.run(
-                    cmd, shell=True, capture_output=True, text=True, check=True
-                )
+                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
         except subprocess.CalledProcessError as e:
             print(f"Rank {rank} failed to run ngen simulation.")
             restore_data_dir(data_dir=self.data_dir)
@@ -117,8 +115,8 @@ class NextGenSetup:
         try:
             subset_gpkg = tmp_root / "config" / f"{self.data_dir.name}_subset.gpkg"
             cmd = (
-                f"route_rs {tmp_root} {subset_gpkg} "
-                f"{temp_ngen_output_dir} {temp_troute_output_dir} --num-threads 31"
+                f"rs-route {tmp_root} --hf {subset_gpkg} -k route-rs "
+                f"-i {temp_ngen_output_dir} -o {temp_troute_output_dir}"
             )
             subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
         except subprocess.CalledProcessError as e:
@@ -241,7 +239,7 @@ class SpotpySetup:
     def evaluation(self) -> np.ndarray:
         return self.model.observed.values.squeeze()[1:]
 
-    def objectivefunction(self, simulation: Sequence[float], evaluation: Sequence[float]) -> float:
+    def objectivefunction(self, simulation: np.ndarray, evaluation: np.ndarray) -> float:
         if len(simulation) != len(evaluation):
             raise ValueError("simulation and observation are not equal length")
 
@@ -331,12 +329,12 @@ def run_spotpy(
     objective_function: str,
     groups: Any,
     merge_catchment: bool,
-    calibration_params: Mapping[str, Mapping[str, Any]],
+    calibration_params: dict,
+    tensorboard_logdir: Path,
     repetitions: int = 25,
     dds_trials: int = 5,
     execution_mode: str = "parallel",
-    number_of_cores: int = 4,
-    tensorboard_logdir: Path | None = None,
+    number_of_cores: int = 4
 ) -> Any:
     
     param_to_model = {name: model for model, names in calibration_params.items() for name in names}
@@ -363,24 +361,34 @@ def run_spotpy(
         execution_mode=execution_mode,
     )  
 
-    if objective_function == "KGE":
-        best_is_higher = True
-        obj_func = spotpy.objectivefunctions.kge
-    elif objective_function == "RMSE":
+
+    if objective_function == "RMSE":
         best_is_higher = False
         obj_func = spotpy.objectivefunctions.rmse
+    else:
+        best_is_higher = True
+        obj_func = spotpy.objectivefunctions.kge
 
-    if algorithm == "DDS":
-        algorithm_maximizes = True
-    elif algorithm == "SCE":
+    # if objective_function == "KGE":
+    #     best_is_higher = True
+    #     obj_func = spotpy.objectivefunctions.kge
+    # elif objective_function == "RMSE":
+    #     best_is_higher = False
+    #     obj_func = spotpy.objectivefunctions.rmse
+
+    if algorithm == "SCE":
         algorithm_maximizes = False
+    else:
+        algorithm_maximizes = True
+    # if algorithm == "DDS":
+    #     algorithm_maximizes = True
+    # elif algorithm == "SCE":
+    #     algorithm_maximizes = False
 
     invert_objective = best_is_higher != algorithm_maximizes
 
     calibration_dir = data_dir.parent.parent
 
-    if tensorboard_logdir is None:
-        tensorboard_logdir = calibration_dir / "tensorboard_logs"
     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M")
     run_name = f"{algorithm}_{objective_function}_{gage_id}_{timestamp}"
     run_log_dir = tensorboard_logdir / run_name
@@ -390,9 +398,9 @@ def run_spotpy(
         os.makedirs(run_log_dir, exist_ok=True)
         # Use aggressive flushing to reduce the chance of "missing" figures due to buffering.
         try:
-            writer = SummaryWriter(log_dir=run_log_dir, max_queue=1, flush_secs=1)
+            writer = SummaryWriter(log_dir=str(run_log_dir), max_queue=1, flush_secs=1)
         except TypeError:
-            writer = SummaryWriter(log_dir=run_log_dir)
+            writer = SummaryWriter(log_dir=str(run_log_dir))
 
     # Ensure rank 0 creates the run directory before workers proceed.
     MPI.COMM_WORLD.Barrier()

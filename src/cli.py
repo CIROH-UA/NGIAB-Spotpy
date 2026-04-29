@@ -9,7 +9,7 @@ from cal_utils import run_spotpy
 from helper import *
 
 
-def set_calibration_params(params: dict | None) -> None:
+def set_calibration_params(params: dict) -> None:
     global CALIBRATION_PARAMS
     CALIBRATION_PARAMS = params
 
@@ -88,7 +88,7 @@ def calibration(
     ] = 330,
 ) -> int:
     data_root = data_root.expanduser()
-    merge_catchment = str_to_bool(merge_catchment) # pyright: ignore[reportAssignmentType]
+    merge_catchment_bool = str_to_bool(merge_catchment) 
 
     args = SimpleNamespace(
         gage_id=gage_id,
@@ -101,7 +101,7 @@ def calibration(
         repetitions=repetitions,
         dds_trials=dds_trials,
         execution_mode=execution_mode.value,
-        merge_catchment=merge_catchment,
+        merge_catchment_bool=merge_catchment_bool,
         merge_area=merge_area,
     )
 
@@ -113,8 +113,10 @@ def calibration(
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
+
+    #need to define this to broadcast to other ranks
     groups = None
-    clone_root: Path | None = None
+    clone_root = None
 
     if execution_mode.value == "serial" and size > 1:
         if rank == 0:
@@ -146,7 +148,7 @@ def calibration(
                 clone_root,
                 execution_mode=execution_mode.value
             )
-            if merge_catchment:
+            if merge_catchment_bool:
                 groups = merge_and_prepare_forcing(
                     data_dir=clone_root,
                     execution_mode=execution_mode.value,
@@ -174,13 +176,13 @@ def calibration(
             algorithm=algorithm.value,
             objective_function=objective_function.value,
             groups=groups,
-            merge_catchment=merge_catchment,
+            merge_catchment=merge_catchment_bool,
             calibration_params=CALIBRATION_PARAMS,
+            tensorboard_logdir=tensorboard_logdir,
             repetitions=repetitions,
             dds_trials=dds_trials,
             execution_mode=execution_mode.value,
             number_of_cores=size if execution_mode.value == "parallel" else 1,
-            tensorboard_logdir=tensorboard_logdir,
         )
 
         if rank == 0:
@@ -208,7 +210,7 @@ def calibration(
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def main() -> int:
     app()
     return 0
 

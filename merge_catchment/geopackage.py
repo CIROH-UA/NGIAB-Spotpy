@@ -26,12 +26,12 @@ class Layers(Enum):
 class GeoPackage:
     gpkg_path: Path
     divides: gpd.GeoDataFrame
-    subdivides: gpd.GeoDataFrame | None
+    # subdivides: gpd.GeoDataFrame | None
     divide_attributes: pd.DataFrame
     flowpath_attributes: pd.DataFrame
     flowpaths: gpd.GeoDataFrame
     nexus: gpd.GeoDataFrame
-    network: pd.DataFrame | None
+    network: pd.DataFrame
 
     def __init__(self, gpkg_path: Path):
         self.gpkg_path = gpkg_path
@@ -197,9 +197,8 @@ class GeoPackage:
         self.divide_attributes.rename(index={old_id: new_id}, inplace=True)
         self.network.loc[-1] = [new_id, old_id]
 
-    def merge(self, ids: list[str | list[str]]) -> None:
+    def merge(self, ids: list[list[int]]) -> None:
         # convert wb ids to cat ids
-
         for i, id_sublist in enumerate(ids):
             sub = ["cat-" + str(id).split("-")[0] for id in id_sublist]
 

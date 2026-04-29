@@ -14,6 +14,7 @@ from merge_catchment.geopackage import GeoPackage
 from merge_catchment.interface import *
 import time
 import shutil
+from tensorboardX import SummaryWriter
 from collections import defaultdict
 from plots import (
     plot_bestmodelrun,
@@ -75,7 +76,7 @@ def parameters_available_bool(
 
 
 def log_parameters_from_spotpy_csv(
-    writer: Any, csv_path: Path, param_names: Sequence[str], step_offset: int = 0
+    writer: SummaryWriter, csv_path: Path, param_names: Sequence[str], step_offset: int = 0
 ) -> None:
     """
     Log SPOTPY parameters from the CSV database after the calibration finishes.
@@ -265,12 +266,16 @@ def merge_and_prepare_forcing(
     else:
         print("Merging geopackage and preparing forcing data...\n\n")
         # merge the geopackage
-        hf = GeoPackage(original_gpkg)
-        groups = group_catchments(original_gpkg, merge_area)
-        hf.merge(groups)
-        hf.save(merged_geopackage)
+        try:
+            hf = GeoPackage(original_gpkg)
+            groups = group_catchments(original_gpkg, merge_area)
+            hf.merge(groups)
+            hf.save(merged_geopackage)
+        except Exception as e:
+            print(f"Merging failed with error: {e}\n\n")
+            print("The merge_area value might be too small. Bump that value up and try calibrating again.")
+            
         backup(original_gpkg)
-
         # rename merged geopackage to original in the folder
         os.system(f"mv {merged_geopackage} {original_gpkg}")  
         cmd = (
@@ -359,12 +364,11 @@ def restore_data_dir(data_dir: Path) -> None:
         shutil.rmtree(temp_runs_dir, ignore_errors=True)
 
 
-def get_feature_id(data_dir: str | Path) -> str:
-    folder = Path(data_dir)
-    gpkg = folder / "config" / f"{folder.name}_subset.gpkg"
+def get_feature_id(data_dir: Path) -> str:
+    gpkg = data_dir / "config" / f"{data_dir.name}_subset.gpkg"
     with sqlite3.connect(gpkg) as conn:
         cmd = (
-            f"SELECT id FROM 'flowpath-attributes' WHERE gage='{folder.name.replace('gage-', '')}'"
+            f"SELECT id FROM 'flowpath-attributes' WHERE gage='{data_dir.name.replace('gage-', '')}'"
         )
         results = conn.execute(cmd).fetchall()
         return results[0][0].split("-")[1]
@@ -374,10 +378,10 @@ def get_feature_id(data_dir: str | Path) -> str:
 def process_usgs_streamflow(
     site: str, start: str, end: str, output_path: str | Path | None = None
 ) -> pd.DataFrame:
-    start = pd.to_datetime(start) - pd.Timedelta(days=1)
-    end = pd.to_datetime(end) + pd.Timedelta(days=1)
-    adjusted_start = start.strftime("%Y-%m-%d")
-    adjusted_end = end.strftime("%Y-%m-%d")
+    adjusted_start = pd.to_datetime(start) - pd.Timedelta(days=1)
+    adjusted_end = pd.to_datetime(end) + pd.Timedelta(days=1)
+    adjusted_start = adjusted_start.strftime("%Y-%m-%d")
+    adjusted_end = adjusted_end.strftime("%Y-%m-%d")
 
     for attempt in range(1, 6):
         try:
