@@ -274,6 +274,7 @@ def merge_and_prepare_forcing(
         except Exception as e:
             print(f"Merging failed with error: {e}\n\n")
             print("The merge_area value might be too small. Bump that value up and try calibrating again.")
+            MPI.COMM_WORLD.Abort(0)
             
         backup(original_gpkg)
         # rename merged geopackage to original in the folder
