@@ -119,7 +119,7 @@ def plot_parameterInteraction(
 
 def plot_bestmodelrun(
     results: Any,
-    evaluation: Sequence[float],
+    evaluation: np.ndarray,
     objective_function: str,
     invert_objective: bool,
     fig_name: str = "Best_model_run.png",

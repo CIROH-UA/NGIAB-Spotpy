@@ -15,6 +15,7 @@ This project calibrates NextGen model parameters with SPOTPY and supports both s
 - [Monitoring Progress](#monitoring-progress)
 - [Troubleshooting](#troubleshooting)
 - [Workflow](#workflow)
+- [Customizing Calibration Parameters](#customizing-calibration-parameters)
 - [Additional Notes](#additional-notes)
 - [Support](#support)
 
@@ -231,8 +232,9 @@ data_root/gage-{gage_id}/
 │   ├── tensorboard_logs/
 │   │   └── <run_name>/
 │   └── archive/
-│       ├── merged.gpkg                  # Merged geopackage (when merge_catchment=True)
-│       └── forcings.nc                  # Forcings used for merged simulation
+│       ├── {merge_area}/
+│           ├── merged.gpkg                  # Merged geopackage for a given merge area(when merge_catchment=True)
+│           └── forcings.nc                  # Forcings used for merged simulation
 └── config/
     └── realization.json             # Updated with best parameters
 ```
@@ -329,6 +331,13 @@ flowchart LR
     E[Evaluation/Metric Calculation] --> F
     F(Clean up temporary files and directories)
 ```
+
+## Customizing Calibration Parameters
+
+You can change which parameters are calibrated (and their bounds/initial guesses) by editing `src/calibration.py`.
+
+- Update `CFE_PARAMS` and `NOAH_PARAMS` to add/remove parameters or adjust `Uniform(min, max, optguess=...)`.
+
 ## Additional Notes
 
 ### Algorithm Selection
