@@ -115,8 +115,8 @@ class NextGenSetup:
         try:
             subset_gpkg = tmp_root / "config" / f"{self.data_dir.name}_subset.gpkg"
             cmd = (
-                f"route_rs {tmp_root} {subset_gpkg} "
-                f"{temp_ngen_output_dir} {temp_troute_output_dir} --num-threads 31"
+                f"rs-route {self.data_dir} --hf {subset_gpkg} -k route-rs "
+                f"-i {temp_ngen_output_dir} -o {temp_troute_output_dir}"
             )
             subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
         except subprocess.CalledProcessError as e:
