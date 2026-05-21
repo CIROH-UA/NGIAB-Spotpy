@@ -66,7 +66,7 @@ This code:
      source ~/.cargo/env
      rustup update stable
      cargo --version
-     cargo install --git https://github.com/slama0077/route_rs.git --branch Calibration
+     cargo install --git https://github.com/CIROH-UA/rs_route.git
      ```
    - macOS (Unix):
      ```bash
@@ -79,7 +79,7 @@ This code:
      export HDF5_DIR="$(brew --prefix hdf5@1.10)"
      export RUSTFLAGS="-C link-args=-Wl,-rpath,$HDF5_DIR/lib"
      export DYLD_FALLBACK_LIBRARY_PATH="$HDF5_DIR/lib"
-     cargo install --git https://github.com/slama0077/route_rs.git --branch Calibration
+     cargo install --git https://github.com/CIROH-UA/rs_route.git
      ```
 5. Create and activate a virtual environment:
    ```bash
