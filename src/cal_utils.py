@@ -17,6 +17,8 @@ import spotpy
 import xarray as xr
 from tensorboardX import SummaryWriter
 from helper import *
+import glob
+import sqlite3
 
 # === Wrapper to Set Up NextGen Model Execution ===
 class NextGenSetup:
@@ -26,7 +28,7 @@ class NextGenSetup:
         start_date: str,
         end_date: str,
         training_start_date: str,
-        observed_flow_path: str | Path,
+        target_variables: dict,
         troute_output_path: Path,
         data_dir: Path,
         groups: Any,
@@ -37,13 +39,7 @@ class NextGenSetup:
         self.gage_id = gage_id
         self.training_start_date = pd.to_datetime(training_start_date)
         self.end_date = pd.to_datetime(end_date)
-        self.observed = pd.read_pickle(observed_flow_path)
-        self.observed["Time"] = pd.to_datetime(self.observed["Time"]).dt.tz_localize(None)
-        self.observed = self.observed[
-            (self.observed["Time"] >= self.training_start_date)
-            & (self.observed["Time"] <= self.end_date)
-        ]
-        self.observed = self.observed.set_index("Time")
+        self.target_variables = target_variables
         self.troute_output_path = troute_output_path
         self.realization_path = data_dir / "config" / "realization.json"
         self.data_dir = data_dir
@@ -51,6 +47,19 @@ class NextGenSetup:
         self.param_to_model = param_to_model
         self.merge_catchment = merge_catchment
         self.execution_mode = execution_mode
+
+        for var_name, var_info in target_variables.items():
+            if var_name == "streamflow":
+                self.observed_streamflow = pd.read_csv(var_info["observed_data_path"])
+                self.observed_streamflow = adjust_date_index(self.observed_streamflow, self.training_start_date, self.end_date)
+            elif var_name == "ET":
+                self.observed_ET = pd.read_csv(var_info["observed_data_path"])
+                self.observed_ET = adjust_date_index(self.observed_ET, self.training_start_date, self.end_date)
+            elif var_name == "SWE":
+                self.observed_SWE = pd.read_csv(var_info["observed_data_path"])
+                self.observed_SWE = adjust_date_index(self.observed_SWE, self.training_start_date, self.end_date)
+            else:
+                raise ValueError(f"Unsupported target variable: {var_name}")
     
     def run_model(
         self,
@@ -79,6 +88,7 @@ class NextGenSetup:
                 )
                 cmd = cmd_base + ngen_cmd
                 subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+                # subprocess.call(cmd, shell=True)
 
             else:
                 cmd_base = f"docker run --rm --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {tmp_root}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
@@ -89,6 +99,7 @@ class NextGenSetup:
                 # cmd = f"bmi-driver {self.data_dir} -j 1 --hf {self.data_dir / 'config' / gpkg_path.name} --config {self.data_dir / 'config' / realization.name}"
 
                 subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+                # subprocess.call(cmd, shell=True)
         except subprocess.CalledProcessError as e:
             print(f"Rank {rank} failed to run ngen simulation.")
             restore_data_dir(data_dir=self.data_dir)
@@ -111,33 +122,119 @@ class NextGenSetup:
                         temp_ngen_output_dir / f"cat-{cat_id}.csv",
                     )
 
-        # running troute simulation to get streamflow
-        try:
-            subset_gpkg = tmp_root / "config" / f"{self.data_dir.name}_subset.gpkg"
-            cmd = (
-                f"rs-route {self.data_dir} --hf {subset_gpkg} -k route-rs "
-                f"-i {temp_ngen_output_dir} -o {temp_troute_output_dir}"
-            )
-            subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Rank {rank} failed to run troute simulation.")
-            restore_data_dir(data_dir=self.data_dir)
-            MPI.COMM_WORLD.Abort(rank)
-        
-        self.troute_output_path = temp_troute_output_dir / self.troute_output_path.name
-        if not self.troute_output_path.exists():
-            print(f"Rank {rank} doesn't have troute output file. ####\n\n")
-            restore_data_dir(data_dir=self.data_dir)
-            MPI.COMM_WORLD.Abort(rank)
+        if "streamflow" in self.target_variables:
+            #running troute simulation to get streamflow
+            try:
+                subset_gpkg = tmp_root / "config" / f"{self.data_dir.name}_subset.gpkg"
+                cmd = (
+                    f"rs-route {self.data_dir} --hf {subset_gpkg} -k route-rs "
+                    f"-i {temp_ngen_output_dir} -o {temp_troute_output_dir}"
+                )
+                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"Rank {rank} failed to run troute simulation.")
+                restore_data_dir(data_dir=self.data_dir)
+                MPI.COMM_WORLD.Abort(rank)
+            
+            self.troute_output_path = temp_troute_output_dir / self.troute_output_path.name
+            if not self.troute_output_path.exists():
+                print(f"Rank {rank} doesn't have troute output file. ####\n\n")
+                restore_data_dir(data_dir=self.data_dir)
+                MPI.COMM_WORLD.Abort(rank)
 
-    def evaluate(self, tmp_root: Path, feature_id: int) -> np.ndarray:
+
+    def evaluate_streamflow(self, tmp_root: Path, feature_id: int) -> np.ndarray:
         ds = xr.open_dataset(self.troute_output_path)
         simulated = ds["flow"].sel(feature_id=feature_id).values
-        actual_start = min(self.training_start_date, self.observed.index[0])
+        actual_start = min(self.training_start_date, self.observed_streamflow.index[0])
         simulated = simulated[ds["time"] >= actual_start]
-        simulated = simulated[: len(self.observed) - 1]
-        shutil.rmtree(tmp_root, ignore_errors=True)
+        # simulated = simulated[: len(self.observed_streamflow) - 1]
+        # shutil.rmtree(tmp_root, ignore_errors=True)
         return simulated
+    
+
+    def evaluate_ET_SWE(self, tmp_root: Path, column: str) -> np.ndarray:
+        if self.merge_catchment:
+            gpkg_path = tmp_root / "config" / "merged.gpkg"
+        else:
+            gpkg_path = tmp_root / "config" / f"{self.data_dir.name}_subset.gpkg"
+        with sqlite3.connect(gpkg_path) as conn:
+            cmd = (
+                f"SELECT divide_id, areasqkm FROM 'divides'"
+            )
+            results = conn.execute(cmd).fetchall()
+            area_lookup = {str(divide_id): areasqkm for divide_id, areasqkm in results}
+            weighted_sum = None
+
+        total_area = 0.0
+
+        files = glob.glob(os.path.join(tmp_root / "outputs" / "ngen", "cat-*.csv"))
+
+        for _, file in enumerate(files, start=1):
+
+            cat_id = os.path.basename(file)
+            # cat_id = cat_id.replace("cat-", "")
+            cat_id = cat_id.replace(".csv", "")
+
+            if cat_id not in area_lookup:
+                print(f"Skipping {cat_id}: no area found")
+                continue
+
+            area = area_lookup[cat_id]
+
+            df = pd.read_csv(
+                file,
+                usecols=["Time", column]
+            )
+            df = df[:len(df)-1]
+
+            df["Time"] = pd.to_datetime(df["Time"])
+
+            daily = (
+                df.groupby(df["Time"].dt.floor("D"))["ACTUAL_ET"]
+                .mean()
+            )
+
+            weighted_daily = daily * area
+
+            if weighted_sum is None:
+                weighted_sum = weighted_daily
+            else:
+                weighted_sum = weighted_sum.add(
+                    weighted_daily,
+                    fill_value=0
+                )
+
+            total_area += area
+
+        weighted_mean = weighted_sum / total_area
+
+        result = pd.DataFrame({
+            "Time": weighted_mean.index,
+            "values": weighted_mean.values
+        })
+        if column == "ACTUAL_ET":
+            actual_start = min(self.training_start_date, self.observed_ET.index[0])
+        else:
+            actual_start = min(self.training_start_date, self.observed_SWE.index[0])
+        result = result[result["Time"] >= actual_start]
+        simulated = np.array(result["values"]) * 1000 #convvert friom m to mm
+        return simulated
+
+    def evaluate(self, tmp_root: Path, feature_id: int) -> list[np.ndarray]:
+        simulated_list = []
+        for var_name in self.target_variables:
+            if var_name == "streamflow":
+                simulated_streamflow = self.evaluate_streamflow(tmp_root, feature_id)
+                simulated_list.append(simulated_streamflow)
+            elif var_name == "ET":
+                simulated_et = self.evaluate_ET_SWE(tmp_root, "ACTUAL_ET")
+                simulated_list.append(simulated_et)
+            elif var_name == "SWE":
+                simulated_swe = self.evaluate_ET_SWE(tmp_root, "SWE")
+                simulated_list.append(simulated_swe)
+        shutil.rmtree(tmp_root, ignore_errors=True)
+        return simulated_list
 
 
 # === SPOTPY Setup Class for Calibration with TensorBoard ===
@@ -217,7 +314,7 @@ class SpotpySetup:
         return tmp_root
 
 
-    def simulation(self, vector: Sequence[float]) -> np.ndarray:
+    def simulation(self, vector: Sequence[float]) -> list[np.ndarray]:
         self.current_params = vector
 
         tmp_root = self._create_process_temp_dir()
@@ -236,80 +333,154 @@ class SpotpySetup:
         )
         return self.model.evaluate(tmp_root, self.feature_id)
 
-    def evaluation(self) -> np.ndarray:
-        return self.model.observed.values.squeeze()[1:]
+    def evaluation(self) -> list[np.ndarray]:
+        evaluation_list = []
+        for var_name in self.model.target_variables:
+            if var_name == "streamflow":
+                evaluation_list.append(self.model.observed_streamflow["values"].values)
+            elif var_name == "ET":
+                evaluation_list.append(self.model.observed_ET.values.squeeze())
+            elif var_name == "SWE":
+                evaluation_list.append(self.model.observed_SWE.values.squeeze())
+        return evaluation_list
 
-    def objectivefunction(self, simulation: np.ndarray, evaluation: np.ndarray) -> float:
-        if len(simulation) != len(evaluation):
-            raise ValueError("simulation and observation are not equal length")
+    def objectivefunction(self, simulation: list[np.ndarray], evaluation: list[np.ndarray]) -> float:
 
-        if np.sum(evaluation) == 0:
-            #since streamflow cant be negative, this means all streamflow value here is 0
-            evaluation = evaluation + np.float64(1e-10)
-        
-        objective_metric = self.obj_func(evaluation, simulation)
+        def calculate_metrics(eval_values: np.ndarray, sim_values: np.ndarray) -> dict:
+            rmse = spotpy.objectivefunctions.rmse(eval_values, sim_values)
+            kge = spotpy.objectivefunctions.kge(eval_values, sim_values)
+            mae = np.mean(np.abs(eval_values - sim_values))
+            nse_denominator = np.sum((eval_values - np.mean(eval_values)) ** 2)
+            nse = np.nan
+            if nse_denominator != 0:
+                nse = 1 - (
+                    np.sum((eval_values - sim_values) ** 2) / nse_denominator
+                )
+            correlation = np.nan
+            if len(eval_values) > 1:
+                correlation = np.corrcoef(eval_values, sim_values)[0, 1]
+            return {
+                "RMSE": rmse,
+                "KGE": kge,
+                "MAE": mae,
+                "NSE": nse,
+                "Correlation": correlation,
+            }
 
-        # Calculate additional metrics for TensorBoard
-        rmse = spotpy.objectivefunctions.rmse(evaluation, simulation)
-        kge = spotpy.objectivefunctions.kge(evaluation, simulation)
-        mae = np.mean(np.abs(evaluation - simulation))
-        nse = 1 - (
-            np.sum((evaluation - simulation) ** 2) / np.sum((evaluation - np.mean(evaluation)) ** 2)
-        )
-        correlation = np.corrcoef(evaluation, simulation)[0, 1]
+        weighted_objective_list = []
+        target_variable_items = list(self.model.target_variables.items())
+        for sim, eval, (var_name, var_info) in zip(simulation, evaluation, target_variable_items):
+            sim = np.asarray(sim)
+            eval = np.asarray(eval)
+            if len(sim) != len(eval):
+                raise ValueError("simulation and observation are not equal length")
+            if np.sum(eval) == 0:
+                # Since the value cannot be negative, this means all values here are 0.
+                eval = eval + np.float64(1e-10)
+            
+            objective_metric = self.obj_func(eval, sim)
 
-        # # Log to TensorBoard if writer is available
+            if self.invert_objective:
+                if self.objective_function_name == "KGE":
+                    objective_metric = 1 - objective_metric
+                else:
+                    objective_metric = -objective_metric
+            else:
+                if self.objective_function_name == "KGE":
+                    objective_metric = objective_metric - 1
+
+            weighted_objective_list.append(objective_metric * var_info["weight"])
+
+            if self.writer:
+                metrics = calculate_metrics(eval, sim)
+                variable_tag = f"TargetVariables/{var_name}"
+                self.writer.add_scalar(
+                    f"{variable_tag}/Objective_Function",
+                    objective_metric,
+                    self.run_id,
+                )
+                self.writer.add_scalar(
+                    f"{variable_tag}/Weighted_Objective_Function",
+                    objective_metric * var_info["weight"],
+                    self.run_id,
+                )
+                self.writer.add_scalar(f"{variable_tag}/MAE", metrics["MAE"], self.run_id)
+                self.writer.add_scalar(f"{variable_tag}/KGE", metrics["KGE"], self.run_id)
+                self.writer.add_scalar(f"{variable_tag}/NSE", metrics["NSE"], self.run_id)
+                self.writer.add_scalar(f"{variable_tag}/RMSE", metrics["RMSE"], self.run_id)
+                self.writer.add_scalar(
+                    f"{variable_tag}/Correlation",
+                    metrics["Correlation"],
+                    self.run_id,
+                )
+
+                if self.run_id % 10 == 0:
+                    fig, ax = plt.subplots(figsize=(12, 6))
+                    ax.plot(eval, label="Observed", color="black", linewidth=1.5)
+                    ax.plot(sim, label="Simulated", linestyle="--", alpha=0.8)
+                    ax.legend()
+                    ax.set_title(
+                        f"{var_name} - Iteration {self.run_id} - Objective: {objective_metric:.3f}"
+                    )
+                    ax.set_xlabel("Time step")
+                    ax.set_ylabel(var_name)
+                    ax.grid(True, alpha=0.3)
+                    self.writer.add_figure(
+                        f"TargetVariables/{var_name}/Comparison",
+                        fig,
+                        self.run_id,
+                    )
+                    plt.close(fig)
+
+                    residuals = eval - sim
+                    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+                    ax1.plot(residuals)
+                    ax1.set_title(f"{var_name} Residuals Over Time")
+                    ax1.set_xlabel("Time step")
+                    ax1.set_ylabel("Residual")
+                    ax1.grid(True, alpha=0.3)
+                    ax1.axhline(y=0, color="r", linestyle="--", alpha=0.5)
+
+                    ax2.hist(residuals, bins=30, edgecolor="black")
+                    ax2.set_title(f"{var_name} Residual Distribution")
+                    ax2.set_xlabel("Residual")
+                    ax2.set_ylabel("Frequency")
+                    ax2.grid(True, alpha=0.3)
+
+                    self.writer.add_figure(
+                        f"TargetVariables/{var_name}/Residuals",
+                        fig,
+                        self.run_id,
+                    )
+                    plt.close(fig)
+
+        objective_metric = float(np.sum(weighted_objective_list))
+
         if self.writer:
-            # Log objective function value
-            self.writer.add_scalar("Metrics/Objective_Function", objective_metric, self.run_id)
-            self.writer.add_scalar("Metrics/MAE", mae, self.run_id)
-            self.writer.add_scalar("Metrics/KGE", kge, self.run_id)
-            self.writer.add_scalar("Metrics/NSE", nse, self.run_id)
-            self.writer.add_scalar("Metrics/RMSE", rmse, self.run_id)
-            self.writer.add_scalar("Metrics/Correlation", correlation, self.run_id)
-
-            # Log hydrographs periodically (every 10 iterations)
+            self.writer.add_scalar(
+                "Metrics/Objective_Function",
+                objective_metric,
+                self.run_id,
+            )
             if self.run_id % 10 == 0:
                 fig, ax = plt.subplots(figsize=(12, 6))
-                ax.plot(evaluation, label="Observed", color="black", linewidth=1.5)
-                ax.plot(simulation, label="Simulated", linestyle="--", alpha=0.8)
-                ax.legend()
-                ax.set_title(f"Iteration {self.run_id} - Objective: {objective_metric:.3f}")
-                ax.set_xlabel("Time step")
-                ax.set_ylabel("Streamflow [m3/sec]")
+                ax.bar(
+                    [var_name for var_name, _ in target_variable_items],
+                    weighted_objective_list,
+                )
+                ax.set_title(
+                    f"Iteration {self.run_id} - Weighted Objective: {objective_metric:.3f}"
+                )
+                ax.set_xlabel("Target variable")
+                ax.set_ylabel("Weighted objective")
                 ax.grid(True, alpha=0.3)
-                self.writer.add_figure("Hydrographs/Comparison", fig, self.run_id)
+                self.writer.add_figure(
+                    "Metrics/Weighted_Objective_Contributions",
+                    fig,
+                    self.run_id,
+                )
                 plt.close(fig)
-
-                # Log residuals
-                residuals = evaluation - simulation
-                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-                ax1.plot(residuals)
-                ax1.set_title("Residuals Over Time")
-                ax1.set_xlabel("Time step")
-                ax1.set_ylabel("Residual [m3/sec]")
-                ax1.grid(True, alpha=0.3)
-                ax1.axhline(y=0, color="r", linestyle="--", alpha=0.5)
-
-                ax2.hist(residuals, bins=30, edgecolor="black")
-                ax2.set_title("Residual Distribution")
-                ax2.set_xlabel("Residual [m3/sec]")
-                ax2.set_ylabel("Frequency")
-                ax2.grid(True, alpha=0.3)
-
-                self.writer.add_figure("Residuals/Analysis", fig, self.run_id)
-                plt.close(fig)
-                self.writer.flush()
-
-        if self.invert_objective:
-            if self.objective_function_name == "KGE":
-                objective_metric = 1 - objective_metric
-            else:
-                objective_metric = -objective_metric
-        else:
-            if self.objective_function_name == "KGE":
-                objective_metric = objective_metric - 1
-
+            self.writer.flush()
         self.run_id += 1
         return objective_metric
 
@@ -320,7 +491,7 @@ def run_spotpy(
     start_date: str,
     end_date: str,
     training_start_date: str,
-    observed_flow_path: str | Path,
+    target_variables: dict,
     troute_output_path: Path,
     data_dir: Path,
     feature_id: int,
@@ -352,7 +523,7 @@ def run_spotpy(
         start_date,
         end_date,
         training_start_date,
-        observed_flow_path,
+        target_variables,
         troute_output_path,
         data_dir,
         groups,
@@ -378,6 +549,7 @@ def run_spotpy(
 
     if algorithm == "SCE":
         algorithm_maximizes = False
+
     else:
         algorithm_maximizes = True
     # if algorithm == "DDS":
@@ -469,8 +641,8 @@ def run_spotpy(
         log_parameters_from_spotpy_csv(writer, csv_path, params_names_list)
         writer.close()
 
-    # # Generate standard plots
-    plot_results(results, optimizer.evaluation(), calibration_dir / "spotpy" / "plots", objective_function, invert_objective)
+    # # # Generate standard plots
+    # plot_results(results, optimizer.evaluation(), calibration_dir / "spotpy" / "plots", objective_function, invert_objective)
 
     print(f"\nTensorBoard logs saved to: {run_log_dir}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results\n\n")

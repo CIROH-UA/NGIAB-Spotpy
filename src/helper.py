@@ -154,7 +154,7 @@ def get_troute_output_name(path: str | Path) -> str:
     return f"troute_output_{start_date.strftime('%Y%m%d%H%M')}.nc"
 
 
-def prepare_config(data_dir: Path, execution_mode: str) -> None:
+def prepare_config(data_dir: Path, execution_mode: str, target_variables: dict) -> None:
     """This function prepares the realization_file and t-route file
     s.t. ngen and routing is done seperately"""
 
@@ -167,9 +167,32 @@ def prepare_config(data_dir: Path, execution_mode: str) -> None:
         realization: dict[str, Any] = json.load(file)
     if "routing" in realization.keys():
         realization.pop("routing", None)
+
+    output_vars = []
+    for var_name in target_variables:
+        if var_name == "streamflow":
+            output_vars.append("Q_OUT")
+        elif var_name == "ET":
+            output_vars.append("ACTUAL_ET")
+        else:
+            output_vars.append("SWE")
+
+    for form in realization.get("global", {}).get("formulations", []):
+        if form.get("name") == "bmi_multi":
+            params = form.get("params", {})
+            if "modules" in params:
+                new_params = {}
+                for k, v in params.items():
+                    if k == "modules":
+                        new_params["output_variables"] = output_vars
+                    new_params[k] = v
+                form["params"] = new_params
+            else:
+                params["output_variables"] = output_vars
+                
     with realization_path.open("w") as file:
         json.dump(realization, file, indent=4)
-
+    
     # catchment routing should be done nexus routing is not an option for the merged geopackage
     # this doesn't preserve identation, but that shouldn't be an issue for the routing file
     with troute_path.open("r") as f:
@@ -406,3 +429,12 @@ def process_usgs_streamflow(
         dfo_usgs_hr.to_pickle(Path(output_path))
 
     return dfo_usgs_hr
+
+def adjust_date_index(observed: pd.DataFrame, training_start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+    observed["Time"] = pd.to_datetime(observed["Time"]).dt.tz_localize(None)
+    observed = observed[
+        (observed["Time"] >= training_start_date)
+        & (observed["Time"] <= end_date)
+    ]
+    observed = observed.set_index("Time")
+    return observed

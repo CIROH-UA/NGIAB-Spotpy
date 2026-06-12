@@ -1,10 +1,10 @@
-from enum import Enum
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Annotated
+from typing import Annotated, Any
 from mpi4py import MPI
 import typer
 import traceback
+import yaml
 from cal_utils import run_spotpy
 from helper import *
 
@@ -12,21 +12,6 @@ from helper import *
 def set_calibration_params(params: dict) -> None:
     global CALIBRATION_PARAMS
     CALIBRATION_PARAMS = params
-
-class Algorithm(str, Enum):
-    SCE = "SCE"
-    DDS = "DDS"
-
-
-class ObjectiveFunction(str, Enum):
-    KGE = "KGE"
-    RMSE = "RMSE"
-
-
-class ExecutionMode(str, Enum):
-    SERIAL = "serial"
-    PARALLEL = "parallel"
-
 
 app = typer.Typer(help="Run SPOTPY calibration for NextGen hydrologic model")
 
@@ -42,51 +27,131 @@ def str_to_bool(value: object) -> bool:
     raise typer.BadParameter("Boolean value expected.")
 
 
+def load_calibration_config(config_path: Path) -> dict[str, Any]:
+    config_path = config_path.expanduser()
+    if not config_path.exists():
+        raise typer.BadParameter(f"Config file does not exist: {config_path}")
+
+    with config_path.open("r") as file:
+        config = yaml.safe_load(file) or {}
+
+    if not isinstance(config, dict):
+        raise typer.BadParameter("Config file must contain a YAML mapping.")
+
+    calibration_config = config.get("calibration", config)
+    if not isinstance(calibration_config, dict):
+        raise typer.BadParameter("The 'calibration' section must be a YAML mapping.")
+
+    required_fields = [
+        "gage_id",
+        "start_date",
+        "end_date",
+        "training_start_date",
+        "data_root",
+        "target_variables",
+    ]
+    missing_fields = [
+        field for field in required_fields if calibration_config.get(field) is None
+    ]
+    if missing_fields:
+        missing = ", ".join(missing_fields)
+        raise typer.BadParameter(f"Missing required config field(s): {missing}")
+
+    defaults = {
+        "algorithm": "DDS",
+        "objective_function": "KGE",
+        "repetitions": 100,
+        "dds_trials": 1,
+        "execution_mode": "parallel",
+        "merge_catchment": True,
+        "merge_area": 200,
+    }
+    return {**defaults, **calibration_config}
+
+
+def parse_target_variables(target_variables: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(target_variables, dict) or not target_variables:
+        raise typer.BadParameter(
+            "'target_variables' must be a non-empty mapping of variable names to target settings."
+        )
+
+    parsed_target_variables = {}
+    total_weight = 0.0
+    for variable, target_config in target_variables.items():
+        variable_name = str(variable).strip()
+        if not variable_name:
+            raise typer.BadParameter("'target_variables' contains an empty variable name.")
+
+        if not isinstance(target_config, dict):
+            raise typer.BadParameter(
+                f"'target_variables.{variable_name}' must be a mapping with output_path and weight."
+            )
+
+        output_path = target_config.get("observed_data_path")
+        if output_path is None:
+            raise typer.BadParameter(
+                f"'target_variables.{variable_name}.output_path' must define an observed data path."
+            )
+
+        weight = target_config.get("weight", target_config.get("weights"))
+        if weight is None:
+            raise typer.BadParameter(
+                f"'target_variables.{variable_name}' must define a weight."
+            )
+
+        try:
+            weight = float(weight)
+        except (TypeError, ValueError) as exc:
+            raise typer.BadParameter(
+                f"'target_variables.{variable_name}.weight' must be numeric."
+            ) from exc
+
+        if weight < 0:
+            raise typer.BadParameter(
+                f"'target_variables.{variable_name}.weight' cannot be negative."
+            )
+
+        total_weight += weight
+        parsed_target_variables[variable_name] = {
+            "observed_data_path": Path(str(output_path)).expanduser(),
+            "weight": weight,
+        }
+
+    if not abs(total_weight - 1.0) <= 1e-9:
+        raise typer.BadParameter(
+            f"The sum of target variable weights must equal 1.0; got {total_weight}."
+        )
+
+    return parsed_target_variables
+
+
 @app.command()
 def calibration(
-    gage_id: Annotated[
-        str, typer.Option("--gage_id", help="USGS gage ID")
-    ],
-    start_date: Annotated[
-        str, typer.Option("--start_date", help="Start date (YYYY-MM-DD)")
-    ],
-    end_date: Annotated[
-        str, typer.Option("--end_date", help="End date (YYYY-MM-DD)")
-    ],
-    training_start_date: Annotated[
-        str,
-        typer.Option("--training_start_date", help="Training start date (YYYY-MM-DD)"),
-    ],
-    data_root: Annotated[
-        Path, typer.Option("--data_root", help="Root directory for data")
-    ],
-    algorithm: Annotated[
-        Algorithm, typer.Option("--algorithm", help="Optimization algorithm")
-    ] = Algorithm.DDS,
-    objective_function: Annotated[
-        ObjectiveFunction, typer.Option("--objective_function", help="Objective function")
-    ] = ObjectiveFunction.KGE,
-    repetitions: Annotated[
-        int, typer.Option("--repetitions", help="Number of repetitions/iterations")
-    ] = 100,
-    dds_trials: Annotated[
-        int, typer.Option("--dds_trials", help="DDS trials (only used if algorithm=DDS)")
-    ] = 1,
-    execution_mode: Annotated[
-        ExecutionMode, typer.Option("--execution_mode", help="Serial or parallel execution")
-    ] = ExecutionMode.PARALLEL,
-    merge_catchment: Annotated[
-        str,
-        typer.Option("--merge_catchment", help="Whether to merge catchments for calibration"),
-    ] = "True",
-    merge_area: Annotated[
-        float,
+    config: Annotated[
+        Path,
         typer.Option(
-            "--merge_area",
-            help="The catchment area to merge the divides in square miles",
+            "--config",
+            "-c",
+            help="YAML configuration file for streamflow calibration",
         ),
-    ] = 330,
+    ],
 ) -> int:
+    config_values = load_calibration_config(config)
+
+    target_variables = parse_target_variables(config_values["target_variables"])
+    gage_id = str(config_values["gage_id"])
+    start_date = str(config_values["start_date"])
+    end_date = str(config_values["end_date"])
+    training_start_date = str(config_values["training_start_date"])
+    data_root = Path(config_values["data_root"])
+    algorithm = str(config_values["algorithm"])
+    objective_function = str(config_values["objective_function"])
+    repetitions = int(config_values["repetitions"])
+    dds_trials = int(config_values["dds_trials"])
+    execution_mode = str(config_values["execution_mode"])
+    merge_catchment = config_values["merge_catchment"]
+    merge_area = float(config_values["merge_area"])
+
     data_root = data_root.expanduser()
     merge_catchment_bool = str_to_bool(merge_catchment) 
 
@@ -96,17 +161,18 @@ def calibration(
         end_date=end_date,
         training_start_date=training_start_date,
         data_root=data_root,
-        algorithm=algorithm.value,
-        objective_function=objective_function.value,
+        algorithm=algorithm,
+        objective_function=objective_function,
         repetitions=repetitions,
         dds_trials=dds_trials,
-        execution_mode=execution_mode.value,
+        execution_mode=execution_mode,
         merge_catchment_bool=merge_catchment_bool,
         merge_area=merge_area,
+        target_variables=target_variables,
     )
 
     data_dir = data_root / f"gage-{gage_id}"
-    observed_flow_path = data_root / f"{gage_id}_observed_flow_{start_date}_{end_date}.pkl"
+    # observed_flow_path = data_root / f"{gage_id}_observed_flow_{start_date}_{end_date}.pkl"
     troute_output_path = data_dir / "outputs" / "troute" / get_troute_output_name(data_dir / "config" / "realization.json") 
     tensorboard_logdir = data_dir / "calibration" / "tensorboard_logs"
 
@@ -118,27 +184,27 @@ def calibration(
     groups = None
     clone_root = None
 
-    if execution_mode.value == "serial" and size > 1:
+    if execution_mode == "serial" and size > 1:
         if rank == 0:
             raise ValueError(
                 "Warning: Running in serial mode but MPI detected multiple processes. For serial execution, run without mpirun.\n\n"
             )
 
-    if execution_mode.value == "parallel" and size == 1:
+    if execution_mode == "parallel" and size == 1:
         if rank == 0:
             raise ValueError("Parallel mode requested, but only 1 MPI process detected.\n\n")
 
-    if rank == 0:
-        if not observed_flow_path.exists():
-            print(f"\n\nRetrieving observed streamflow for gage {gage_id}...\n\n")
-            process_usgs_streamflow(
-                gage_id,
-                start_date,
-                end_date,
-                output_path=observed_flow_path,
-            )
-        else:
-            print(f"\n\nUsing existing observed flow data: {observed_flow_path}\n\n")
+    # if rank == 0:
+    #     if not observed_flow_path.exists():
+    #         print(f"\n\nRetrieving observed streamflow for gage {gage_id}...\n\n")
+    #         process_usgs_streamflow(
+    #             gage_id,
+    #             start_date,
+    #             end_date,
+    #             output_path=observed_flow_path,
+    #         )
+    #     else:
+    #         print(f"\n\nUsing existing observed flow data: {observed_flow_path}\n\n")
 
     comm.Barrier()
     try:
@@ -146,12 +212,13 @@ def calibration(
             clone_root = create_directories(data_dir)
             prepare_config(
                 clone_root,
-                execution_mode=execution_mode.value
+                execution_mode=execution_mode,
+                target_variables=target_variables
             )
             if merge_catchment_bool:
                 groups = merge_and_prepare_forcing(
                     data_dir=clone_root,
-                    execution_mode=execution_mode.value,
+                    execution_mode=execution_mode,
                     merge_area=float(merge_area),
                 )
             print_calibration_configuration(args=args, size=size)  
@@ -168,21 +235,21 @@ def calibration(
             start_date,
             end_date,
             training_start_date,
-            observed_flow_path,
+            target_variables,
             troute_output_path,
             clone_root ,
             feature_id,
             rank,
-            algorithm=algorithm.value,
-            objective_function=objective_function.value,
+            algorithm=algorithm,
+            objective_function=objective_function,
             groups=groups,
             merge_catchment=merge_catchment_bool,
             calibration_params=CALIBRATION_PARAMS,
             tensorboard_logdir=tensorboard_logdir,
             repetitions=repetitions,
             dds_trials=dds_trials,
-            execution_mode=execution_mode.value,
-            number_of_cores=size if execution_mode.value == "parallel" else 1,
+            execution_mode=execution_mode,
+            number_of_cores=size if execution_mode == "parallel" else 1,
         )
 
         if rank == 0:

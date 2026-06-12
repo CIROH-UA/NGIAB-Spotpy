@@ -1,7 +1,6 @@
 from spotpy.parameter import Uniform
 import cli
 
-
 CFE_PARAMS = {
     "b": Uniform(2.0, 15.0, optguess=4.05),
     "satpsi": Uniform(0.03, 0.955, optguess=0.355),
