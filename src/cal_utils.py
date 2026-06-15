@@ -88,8 +88,8 @@ class NextGenSetup:
                     f"/ngen/ngen/data/config/{realization.name} /ngen/ngen/data/{partition_file} "
                 )
                 cmd = cmd_base + ngen_cmd
-                # subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-                subprocess.call(cmd, shell=True)
+                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+                # subprocess.call(cmd, shell=True)
 
             else:
                 cmd_base = f"docker run --rm --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {tmp_root}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
@@ -99,8 +99,8 @@ class NextGenSetup:
                 cmd = cmd_base + ngen_cmd
                 # cmd = f"bmi-driver {self.data_dir} -j 1 --hf {self.data_dir / 'config' / gpkg_path.name} --config {self.data_dir / 'config' / realization.name}"
 
-                # subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-                subprocess.call(cmd, shell=True)
+                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+                # subprocess.call(cmd, shell=True)
         except subprocess.CalledProcessError as e:
             print(f"Rank {rank} failed to run ngen simulation.")
             restore_data_dir(data_dir=self.data_dir)
@@ -132,8 +132,8 @@ class NextGenSetup:
                     f"rs-route {self.data_dir} --hf {subset_gpkg} -k route-rs "
                     f"-i {temp_ngen_output_dir} -o {temp_troute_output_dir}"
                 )
-                # subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-                subprocess.call(cmd, shell=True)
+                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+                # subprocess.call(cmd, shell=True)
             except subprocess.CalledProcessError as e:
                 print(f"Rank {rank} failed to run troute simulation.")
                 restore_data_dir(data_dir=self.data_dir)
