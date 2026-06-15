@@ -38,7 +38,8 @@ class NextGenSetup:
     ):
         self.gage_id = gage_id
         self.training_start_date = pd.to_datetime(training_start_date)
-        self.end_date = pd.to_datetime(end_date)
+        #works properly with the ET and SWE
+        self.end_date = pd.to_datetime(end_date) - pd.Timedelta(days=1)
         self.target_variables = target_variables
         self.troute_output_path = troute_output_path
         self.realization_path = data_dir / "config" / "realization.json"
@@ -124,13 +125,15 @@ class NextGenSetup:
 
         if "streamflow" in self.target_variables:
             #running troute simulation to get streamflow
+            print("Routing Streamflow")
             try:
                 subset_gpkg = tmp_root / "config" / f"{self.data_dir.name}_subset.gpkg"
                 cmd = (
                     f"rs-route {self.data_dir} --hf {subset_gpkg} -k route-rs "
                     f"-i {temp_ngen_output_dir} -o {temp_troute_output_dir}"
                 )
-                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+                # subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+                subprocess.call(cmd, shell=True)
             except subprocess.CalledProcessError as e:
                 print(f"Rank {rank} failed to run troute simulation.")
                 restore_data_dir(data_dir=self.data_dir)
@@ -220,11 +223,11 @@ class NextGenSetup:
             # actual_start = min(self.training_start_date, self.observed_ET.index[0])
             simulated = result[(result["Time"] >= self.training_start_date) & (result["Time"] <= self.end_date)]
             #convert from m to mm
-            simulated = np.array(result["values"]) * 1000
+            simulated = np.array(simulated["values"]) * 1000
         else:
             # actual_start = min(self.training_start_date, self.observed_SWE.index[0])
             simulated = result[(result["Time"] >= self.training_start_date) & (result["Time"] <= self.end_date)]
-            simulated = np.array(result["values"])
+            simulated = np.array(simulated["values"])
         return simulated
 
     def evaluate(self, tmp_root: Path, feature_id: int) -> list[np.ndarray]:
@@ -239,8 +242,7 @@ class NextGenSetup:
             elif var_name == "SWE":
                 simulated_swe = self.evaluate_ET_SWE(tmp_root, "SNEQV")
                 simulated_list.append(simulated_swe)
-        breakpoint()
-        shutil.rmtree(tmp_root, ignore_errors=True)
+        # shutil.rmtree(tmp_root, ignore_errors=True)
         return simulated_list
 
 
@@ -376,7 +378,6 @@ class SpotpySetup:
 
         weighted_objective_list = []
         target_variable_items = list(self.model.target_variables.items())
-        breakpoint()
         for sim, eval, (var_name, var_info) in zip(simulation, evaluation, target_variable_items):
             sim = np.asarray(sim)
             eval = np.asarray(eval)
