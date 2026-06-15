@@ -87,8 +87,8 @@ class NextGenSetup:
                     f"/ngen/ngen/data/config/{realization.name} /ngen/ngen/data/{partition_file} "
                 )
                 cmd = cmd_base + ngen_cmd
-                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-                # subprocess.call(cmd, shell=True)
+                # subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+                subprocess.call(cmd, shell=True)
 
             else:
                 cmd_base = f"docker run --rm --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {tmp_root}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
@@ -98,8 +98,8 @@ class NextGenSetup:
                 cmd = cmd_base + ngen_cmd
                 # cmd = f"bmi-driver {self.data_dir} -j 1 --hf {self.data_dir / 'config' / gpkg_path.name} --config {self.data_dir / 'config' / realization.name}"
 
-                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-                # subprocess.call(cmd, shell=True)
+                # subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+                subprocess.call(cmd, shell=True)
         except subprocess.CalledProcessError as e:
             print(f"Rank {rank} failed to run ngen simulation.")
             restore_data_dir(data_dir=self.data_dir)
@@ -146,13 +146,11 @@ class NextGenSetup:
     def evaluate_streamflow(self, tmp_root: Path, feature_id: int) -> np.ndarray:
         ds = xr.open_dataset(self.troute_output_path)
         simulated = ds["flow"].sel(feature_id=feature_id).values
-        actual_start = min(self.training_start_date, self.observed_streamflow.index[0])
-        simulated = simulated[ds["time"] >= actual_start]
+        # actual_start = min(self.training_start_date, self.observed_streamflow.index[0])
+        simulated = simulated[(ds["time"] >= self.training_start_date) & (ds["time"] <= self.end_date)]
         # simulated = simulated[: len(self.observed_streamflow) - 1]
-        # shutil.rmtree(tmp_root, ignore_errors=True)
         return simulated
     
-
     def evaluate_ET_SWE(self, tmp_root: Path, column: str) -> np.ndarray:
         if self.merge_catchment:
             gpkg_path = tmp_root / "config" / "merged.gpkg"
@@ -190,11 +188,16 @@ class NextGenSetup:
 
             df["Time"] = pd.to_datetime(df["Time"])
 
-            daily = (
-                df.groupby(df["Time"].dt.floor("D"))["ACTUAL_ET"]
-                .mean()
-            )
-
+            if column == "ACTUAL_ET":
+                daily = (
+                    df.groupby(df["Time"].dt.floor("D"))["ACTUAL_ET"]
+                    .sum()
+                )
+            else:
+                daily = (
+                    df.groupby(df["Time"].dt.floor("D"))["SNEQV"]
+                    .mean()
+                )
             weighted_daily = daily * area
 
             if weighted_sum is None:
@@ -214,11 +217,14 @@ class NextGenSetup:
             "values": weighted_mean.values
         })
         if column == "ACTUAL_ET":
-            actual_start = min(self.training_start_date, self.observed_ET.index[0])
+            # actual_start = min(self.training_start_date, self.observed_ET.index[0])
+            simulated = result[(result["Time"] >= self.training_start_date) & (result["Time"] <= self.end_date)]
+            #convert from m to mm
+            simulated = np.array(result["values"]) * 1000
         else:
-            actual_start = min(self.training_start_date, self.observed_SWE.index[0])
-        result = result[result["Time"] >= actual_start]
-        simulated = np.array(result["values"]) * 1000 #convvert friom m to mm
+            # actual_start = min(self.training_start_date, self.observed_SWE.index[0])
+            simulated = result[(result["Time"] >= self.training_start_date) & (result["Time"] <= self.end_date)]
+            simulated = np.array(result["values"])
         return simulated
 
     def evaluate(self, tmp_root: Path, feature_id: int) -> list[np.ndarray]:
@@ -231,8 +237,9 @@ class NextGenSetup:
                 simulated_et = self.evaluate_ET_SWE(tmp_root, "ACTUAL_ET")
                 simulated_list.append(simulated_et)
             elif var_name == "SWE":
-                simulated_swe = self.evaluate_ET_SWE(tmp_root, "SWE")
+                simulated_swe = self.evaluate_ET_SWE(tmp_root, "SNEQV")
                 simulated_list.append(simulated_swe)
+        breakpoint()
         shutil.rmtree(tmp_root, ignore_errors=True)
         return simulated_list
 
@@ -369,6 +376,7 @@ class SpotpySetup:
 
         weighted_objective_list = []
         target_variable_items = list(self.model.target_variables.items())
+        breakpoint()
         for sim, eval, (var_name, var_info) in zip(simulation, evaluation, target_variable_items):
             sim = np.asarray(sim)
             eval = np.asarray(eval)

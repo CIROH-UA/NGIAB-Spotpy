@@ -175,7 +175,7 @@ def prepare_config(data_dir: Path, execution_mode: str, target_variables: dict) 
         elif var_name == "ET":
             output_vars.append("ACTUAL_ET")
         else:
-            output_vars.append("SWE")
+            output_vars.append("SNEQV")
 
     for form in realization.get("global", {}).get("formulations", []):
         if form.get("name") == "bmi_multi":
