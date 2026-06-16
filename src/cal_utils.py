@@ -125,7 +125,7 @@ class NextGenSetup:
 
         if "streamflow" in self.target_variables:
             #running troute simulation to get streamflow
-            print("Routing Streamflow")
+            # print("Routing Streamflow")
             try:
                 subset_gpkg = tmp_root / "config" / f"{self.data_dir.name}_subset.gpkg"
                 cmd = (
@@ -378,6 +378,7 @@ class SpotpySetup:
 
         weighted_objective_list = []
         target_variable_items = list(self.model.target_variables.items())
+        csv_row: dict[str, Any] = {"run_id": self.run_id}
         for sim, eval, (var_name, var_info) in zip(simulation, evaluation, target_variable_items):
             sim = np.asarray(sim)
             eval = np.asarray(eval)
@@ -389,16 +390,8 @@ class SpotpySetup:
             
             objective_metric = self.obj_func(eval, sim)
 
-            if self.invert_objective:
-                if self.objective_function_name == "KGE":
-                    objective_metric = 1 - objective_metric
-                else:
-                    objective_metric = -objective_metric
-            else:
-                if self.objective_function_name == "KGE":
-                    objective_metric = objective_metric - 1
-
             weighted_objective_list.append(objective_metric * var_info["weight"])
+            csv_row[f"KGE_{var_name}"] = objective_metric
 
             if self.writer:
                 metrics = calculate_metrics(eval, sim)
@@ -465,6 +458,16 @@ class SpotpySetup:
 
         objective_metric = float(np.sum(weighted_objective_list))
 
+        csv_row["total_weighted_objective"] = objective_metric
+        csv_path = self.calibration_dir / "spotpy" / "KGE_history.csv"
+
+        pd.DataFrame([csv_row]).to_csv(
+            csv_path,
+            mode="a",
+            header=not csv_path.exists(),
+            index=False,
+        )
+
         if self.writer:
             self.writer.add_scalar(
                 "Metrics/Objective_Function",
@@ -490,6 +493,16 @@ class SpotpySetup:
                 )
                 plt.close(fig)
             self.writer.flush()
+        
+        #append in a csv file individual KGE for var_name and total weighted_KGE
+        if self.invert_objective:
+            if self.objective_function_name == "KGE":
+                objective_metric = 1 - objective_metric
+            else:
+                objective_metric = -objective_metric
+        else:
+            if self.objective_function_name == "KGE":
+                objective_metric = objective_metric - 1
         self.run_id += 1
         return objective_metric
 
@@ -556,7 +569,7 @@ def run_spotpy(
     #     best_is_higher = False
     #     obj_func = spotpy.objectivefunctions.rmse
 
-    if algorithm == "SCE":
+    if algorithm == "SCE" or algorithm == "NSGAII":
         algorithm_maximizes = False
 
     else:
@@ -634,6 +647,18 @@ def run_spotpy(
             with spotpy_stdout_control(rank=rank, execution_mode=execution_mode):
                 sampler.sample(repetitions, trials=int(dds_trials))
 
+    if algorithm == "NSGAII":
+        nsgaii_population = max(number_of_cores, 10)
+        if execution_mode == "serial":
+            sampler = spotpy.algorithms.NSGAII(optimizer, dbname=db_name, dbformat="csv")
+            sampler.sample(generations=repetitions, n_obj=1, n_pop=nsgaii_population)
+        else:
+            sampler = spotpy.algorithms.NSGAII(
+                optimizer, dbname=db_name, dbformat="csv", parallel="mpi"
+            )
+            with spotpy_stdout_control(rank=rank, execution_mode=execution_mode):
+                sampler.sample(generations=repetitions, n_obj=1, n_pop=nsgaii_population)
+                
     results = sampler.getdata()
     # Final results to TensorBoard
     best_params = spotpy.analyser.get_best_parameterset(results, maximize=best_is_higher)
