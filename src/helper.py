@@ -340,6 +340,9 @@ def create_directories(data_dir: Path) -> Path:
     if (data_dir / "calibration" / "temp_runs").exists():
         shutil.rmtree(data_dir / "calibration" / "temp_runs")
 
+    if (data_dir / "calibration" / "spotpy" / "KGE_history.csv").exists():
+        Path.unlink(data_dir / "calibration" / "spotpy" / "KGE_history.csv")
+
     #create clone root diretory inside "Temp_Runs" to keep the main directory clean and untouched 
     clone_root = data_dir / "calibration" / "temp_runs" / f"{data_dir.name}"
     clone_root.mkdir(parents=True, exist_ok=True)
