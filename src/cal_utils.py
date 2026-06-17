@@ -676,7 +676,7 @@ def run_spotpy(
         writer.close()
 
     # # # Generate standard plots
-    # plot_results(results, optimizer.evaluation(), calibration_dir / "spotpy" / "plots", objective_function, invert_objective)
+    plot_results(results, optimizer, calibration_dir / "spotpy" / "plots", objective_function, invert_objective)
 
     print(f"\nTensorBoard logs saved to: {run_log_dir}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results\n\n")

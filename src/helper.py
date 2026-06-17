@@ -112,15 +112,15 @@ def log_parameters_from_spotpy_csv(
 
 def plot_results(
     results: Any,
-    observation_data: Any,
+    optimizer: Any,
     output_dir: str | Path,
     objective_function: str,
     invert_objective: bool,
 ) -> None:
-    plot_parametertrace(results=results, output_folder=output_dir)
-    plot_parameterInteraction(results=results, output_folder=output_dir)
-    plot_bestmodelrun(results=results, evaluation=observation_data, objective_function=objective_function, invert_objective=invert_objective, output_folder=output_dir)
-    plot_parameter_correlation(results=results, output_folder=output_dir)
+    # plot_parametertrace(results=results, output_folder=output_dir)
+    # plot_parameterInteraction(results=results, output_folder=output_dir)
+    plot_bestmodelrun(results=results, optimizer=optimizer, objective_function=objective_function, invert_objective=invert_objective, output_folder=output_dir)
+    # plot_parameter_correlation(results=results, output_folder=output_dir)
 
 
 def _update_parameters(file_path: Path, param_updates: dict[str, Any], model_type_name: str) -> None:

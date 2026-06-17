@@ -119,7 +119,7 @@ def plot_parameterInteraction(
 
 def plot_bestmodelrun(
     results: Any,
-    evaluation: np.ndarray,
+    optimizer: Any,
     objective_function: str,
     invert_objective: bool,
     fig_name: str = "Best_model_run.png",
@@ -130,7 +130,9 @@ def plot_bestmodelrun(
     sns.set_style("darkgrid")
 
     fig, ax = plt.subplots(figsize=(16, 9))
+    evaluation = optimizer.evaluation()
 
+    breakpoint()
     # Clean evaluation data
     evaluation = np.array(evaluation, dtype=float)
     evaluation[evaluation == -9999] = np.nan
