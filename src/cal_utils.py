@@ -526,6 +526,7 @@ def run_spotpy(
     tensorboard_logdir: Path,
     repetitions: int = 25,
     dds_trials: int = 5,
+    n_pop: int = 10,
     execution_mode: str = "parallel",
     number_of_cores: int = 4
 ) -> Any:
@@ -648,7 +649,7 @@ def run_spotpy(
                 sampler.sample(repetitions, trials=int(dds_trials))
 
     if algorithm == "NSGAII":
-        nsgaii_population = max(number_of_cores, 10)
+        nsgaii_population = n_pop
         if execution_mode == "serial":
             sampler = spotpy.algorithms.NSGAII(optimizer, dbname=db_name, dbformat="csv")
             sampler.sample(generations=repetitions, n_obj=1, n_pop=nsgaii_population)

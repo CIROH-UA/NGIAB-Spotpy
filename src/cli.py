@@ -65,6 +65,7 @@ def load_calibration_config(config_path: Path) -> dict[str, Any]:
         "execution_mode": "parallel",
         "merge_catchment": True,
         "merge_area": 200,
+        "n_pop" : 10,
     }
     return {**defaults, **calibration_config}
 
@@ -151,6 +152,7 @@ def calibration(
     execution_mode = str(config_values["execution_mode"])
     merge_catchment = config_values["merge_catchment"]
     merge_area = float(config_values["merge_area"])
+    n_pop = int(config_values["n_pop"])
 
     data_root = data_root.expanduser()
     merge_catchment_bool = str_to_bool(merge_catchment) 
@@ -172,7 +174,6 @@ def calibration(
     )
 
     data_dir = data_root / f"gage-{gage_id}"
-    # observed_flow_path = data_root / f"{gage_id}_observed_flow_{start_date}_{end_date}.pkl"
     troute_output_path = data_dir / "outputs" / "troute" / get_troute_output_name(data_dir / "config" / "realization.json") 
     tensorboard_logdir = data_dir / "calibration" / "tensorboard_logs"
 
@@ -193,18 +194,6 @@ def calibration(
     if execution_mode == "parallel" and size == 1:
         if rank == 0:
             raise ValueError("Parallel mode requested, but only 1 MPI process detected.\n\n")
-
-    # if rank == 0:
-    #     if not observed_flow_path.exists():
-    #         print(f"\n\nRetrieving observed streamflow for gage {gage_id}...\n\n")
-    #         process_usgs_streamflow(
-    #             gage_id,
-    #             start_date,
-    #             end_date,
-    #             output_path=observed_flow_path,
-    #         )
-    #     else:
-    #         print(f"\n\nUsing existing observed flow data: {observed_flow_path}\n\n")
 
     comm.Barrier()
     try:
@@ -248,6 +237,7 @@ def calibration(
             tensorboard_logdir=tensorboard_logdir,
             repetitions=repetitions,
             dds_trials=dds_trials,
+            n_pop=n_pop,
             execution_mode=execution_mode,
             number_of_cores=size if execution_mode == "parallel" else 1,
         )
