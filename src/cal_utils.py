@@ -355,6 +355,8 @@ class SpotpySetup:
 
     def objectivefunction(self, simulation: list[np.ndarray], evaluation: list[np.ndarray]) -> float:
 
+
+
         def calculate_metrics(eval_values: np.ndarray, sim_values: np.ndarray) -> dict:
             rmse = spotpy.objectivefunctions.rmse(eval_values, sim_values)
             kge = spotpy.objectivefunctions.kge(eval_values, sim_values)
@@ -504,6 +506,162 @@ class SpotpySetup:
             if self.objective_function_name == "KGE":
                 objective_metric = objective_metric - 1
         self.run_id += 1
+
+
+        # def calculate_metrics(eval_values: np.ndarray, sim_values: np.ndarray) -> dict:
+        #     rmse = spotpy.objectivefunctions.rmse(eval_values, sim_values)
+        #     kge = spotpy.objectivefunctions.kge(eval_values, sim_values)
+        #     mae = np.mean(np.abs(eval_values - sim_values))
+        #     nse_denominator = np.sum((eval_values - np.mean(eval_values)) ** 2)
+        #     nse = np.nan
+        #     if nse_denominator != 0:
+        #         nse = 1 - (
+        #             np.sum((eval_values - sim_values) ** 2) / nse_denominator
+        #         )
+        #     correlation = np.nan
+        #     if len(eval_values) > 1:
+        #         correlation = np.corrcoef(eval_values, sim_values)[0, 1]
+        #     return {
+        #         "RMSE": rmse,
+        #         "KGE": kge,
+        #         "MAE": mae,
+        #         "NSE": nse,
+        #         "Correlation": correlation,
+        #     }
+
+        # objective_list = []
+        # target_variable_items = list(self.model.target_variables.items())
+        # csv_row: dict[str, Any] = {"run_id": self.run_id}
+        # for sim, eval, (var_name, var_info) in zip(simulation, evaluation, target_variable_items):
+        #     sim = np.asarray(sim)
+        #     eval = np.asarray(eval)
+        #     if len(sim) != len(eval):
+        #         raise ValueError("simulation and observation are not equal length")
+        #     if np.sum(eval) == 0:
+        #         # Since the value cannot be negative, this means all values here are 0.
+        #         eval = eval + np.float64(1e-10)
+            
+        #     objective_metric = self.obj_func(eval, sim)
+
+        #     objective_list.append(objective_metric)
+        #     csv_row[f"KGE_{var_name}"] = objective_metric
+
+        #     if self.writer:
+        #         metrics = calculate_metrics(eval, sim)
+        #         variable_tag = f"TargetVariables/{var_name}"
+        #         self.writer.add_scalar(
+        #             f"{variable_tag}/Objective_Function",
+        #             objective_metric,
+        #             self.run_id,
+        #         )
+        #         # self.writer.add_scalar(
+        #         #     f"{variable_tag}/Weighted_Objective_Function",
+        #         #     objective_metric * var_info["weight"],
+        #         #     self.run_id,
+        #         # )
+        #         self.writer.add_scalar(f"{variable_tag}/MAE", metrics["MAE"], self.run_id)
+        #         self.writer.add_scalar(f"{variable_tag}/KGE", metrics["KGE"], self.run_id)
+        #         self.writer.add_scalar(f"{variable_tag}/NSE", metrics["NSE"], self.run_id)
+        #         self.writer.add_scalar(f"{variable_tag}/RMSE", metrics["RMSE"], self.run_id)
+        #         self.writer.add_scalar(
+        #             f"{variable_tag}/Correlation",
+        #             metrics["Correlation"],
+        #             self.run_id,
+        #         )
+
+        #         if self.run_id % 10 == 0:
+        #             fig, ax = plt.subplots(figsize=(12, 6))
+        #             ax.plot(eval, label="Observed", color="black", linewidth=1.5)
+        #             ax.plot(sim, label="Simulated", linestyle="--", alpha=0.8)
+        #             ax.legend()
+        #             ax.set_title(
+        #                 f"{var_name} - Iteration {self.run_id} - Objective: {objective_metric:.3f}"
+        #             )
+        #             ax.set_xlabel("Time step")
+        #             ax.set_ylabel(var_name)
+        #             ax.grid(True, alpha=0.3)
+        #             self.writer.add_figure(
+        #                 f"TargetVariables/{var_name}/Comparison",
+        #                 fig,
+        #                 self.run_id,
+        #             )
+        #             plt.close(fig)
+
+        #             residuals = eval - sim
+        #             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        #             ax1.plot(residuals)
+        #             ax1.set_title(f"{var_name} Residuals Over Time")
+        #             ax1.set_xlabel("Time step")
+        #             ax1.set_ylabel("Residual")
+        #             ax1.grid(True, alpha=0.3)
+        #             ax1.axhline(y=0, color="r", linestyle="--", alpha=0.5)
+
+        #             ax2.hist(residuals, bins=30, edgecolor="black")
+        #             ax2.set_title(f"{var_name} Residual Distribution")
+        #             ax2.set_xlabel("Residual")
+        #             ax2.set_ylabel("Frequency")
+        #             ax2.grid(True, alpha=0.3)
+
+        #             self.writer.add_figure(
+        #                 f"TargetVariables/{var_name}/Residuals",
+        #                 fig,
+        #                 self.run_id,
+        #             )
+        #             plt.close(fig)
+
+        # # objective_metric = float(np.sum(weighted_objective_list))
+        # total_sum = 0
+        # for individual_kge in objective_list:
+        #     total_sum += (1 - individual_kge)**2
+        
+        # objective_metric = -(np.sqrt(total_sum))
+
+        # csv_row["total_weighted_objective"] = objective_metric
+        # csv_path = self.calibration_dir / "spotpy" / "KGE_history.csv"
+
+        # pd.DataFrame([csv_row]).to_csv(
+        #     csv_path,
+        #     mode="a",
+        #     header=not csv_path.exists(),
+        #     index=False,
+        # )
+
+        # if self.writer:
+        #     self.writer.add_scalar(
+        #         "Metrics/Objective_Function",
+        #         objective_metric,
+        #         self.run_id,
+        #     )
+        #     if self.run_id % 10 == 0:
+        #         fig, ax = plt.subplots(figsize=(12, 6))
+        #         ax.bar(
+        #             [var_name for var_name, _ in target_variable_items],
+        #             objective_list,
+        #         )
+        #         ax.set_title(
+        #             f"Iteration {self.run_id} - Weighted Objective: {objective_metric:.3f}"
+        #         )
+        #         ax.set_xlabel("Target variable")
+        #         ax.set_ylabel("Total objective")
+        #         ax.grid(True, alpha=0.3)
+        #         self.writer.add_figure(
+        #             "Metrics/Weighted_Objective_Contributions",
+        #             fig,
+        #             self.run_id,
+        #         )
+        #         plt.close(fig)
+        #     self.writer.flush()
+        
+        # #append in a csv file individual KGE for var_name and total weighted_KGE
+        # # if self.invert_objective:
+        # #     if self.objective_function_name == "KGE":
+        # #         objective_metric = 1 - objective_metric
+        # #     else:
+        # #         objective_metric = -objective_metric
+        # # else:
+        # #     if self.objective_function_name == "KGE":
+        # #         objective_metric = objective_metric - 1
+        # self.run_id += 1
         return objective_metric
 
 
@@ -665,6 +823,10 @@ def run_spotpy(
 
     best_params_value = best_params[0]
 
+    best_params_index, _ = spotpy.analyser.get_maxlikeindex(results, verbose=False)[0][0]
+
+    # breakpoint()
+
     #redefine realization path to the main data directory
     realization_path = calibration_dir.parent / "config" / "realization.json"
     write_config(realization_path, best_params_value, param_to_model)
@@ -681,4 +843,4 @@ def run_spotpy(
     print(f"\nTensorBoard logs saved to: {run_log_dir}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results\n\n")
 
-    return best_params
+    return best_params, best_params_index
