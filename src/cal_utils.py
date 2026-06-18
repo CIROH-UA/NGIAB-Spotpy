@@ -824,7 +824,8 @@ def run_spotpy(
 
     best_params_value = best_params[0]
 
-    best_params_index, _ = spotpy.analyser.get_maxlikeindex(results, verbose=False)[0][0]
+    best_params_index, _ = spotpy.analyser.get_maxlikeindex(results, verbose=False)
+    best_params_index = best_params_index[0][0]
 
     # breakpoint()
 

@@ -66,6 +66,7 @@ def load_calibration_config(config_path: Path) -> dict[str, Any]:
         "merge_catchment": True,
         "merge_area": 200,
         "n_pop" : 10,
+        "norm": False,
     }
     return {**defaults, **calibration_config}
 
@@ -76,49 +77,70 @@ def parse_target_variables(target_variables: Any) -> dict[str, dict[str, Any]]:
             "'target_variables' must be a non-empty mapping of variable names to target settings."
         )
 
+    # Determine weight mode
+    weight_flags = []
+
+    for variable, target_config in target_variables.items():
+        if not isinstance(target_config, dict):
+            raise typer.BadParameter(
+                f"'target_variables.{variable}' must be a mapping with output_path and weight."
+            )
+
+        has_weight = (
+            target_config.get("weight") is not None
+            or target_config.get("weights") is not None
+        )
+        weight_flags.append(has_weight)
+
+    if any(weight_flags) and not all(weight_flags):
+        raise typer.BadParameter(
+            "Either all target variables must define weights, or none of them may define weights."
+        )
+
+    use_equal_weights = not any(weight_flags)
+    equal_weight = 1.0 / len(target_variables)
+
     parsed_target_variables = {}
     total_weight = 0.0
+
     for variable, target_config in target_variables.items():
         variable_name = str(variable).strip()
         if not variable_name:
-            raise typer.BadParameter("'target_variables' contains an empty variable name.")
-
-        if not isinstance(target_config, dict):
             raise typer.BadParameter(
-                f"'target_variables.{variable_name}' must be a mapping with output_path and weight."
+                "'target_variables' contains an empty variable name."
             )
 
         output_path = target_config.get("observed_data_path")
         if output_path is None:
             raise typer.BadParameter(
-                f"'target_variables.{variable_name}.output_path' must define an observed data path."
+                f"'target_variables.{variable_name}.observed_data_path' must define an observed data path."
             )
 
-        weight = target_config.get("weight", target_config.get("weights"))
-        if weight is None:
-            raise typer.BadParameter(
-                f"'target_variables.{variable_name}' must define a weight."
-            )
+        if use_equal_weights:
+            weight = equal_weight
+        else:
+            weight = target_config.get("weight", target_config.get("weights"))
 
-        try:
-            weight = float(weight)
-        except (TypeError, ValueError) as exc:
-            raise typer.BadParameter(
-                f"'target_variables.{variable_name}.weight' must be numeric."
-            ) from exc
+            try:
+                weight = float(weight)
+            except (TypeError, ValueError) as exc:
+                raise typer.BadParameter(
+                    f"'target_variables.{variable_name}.weight' must be numeric."
+                ) from exc
 
-        if weight < 0:
-            raise typer.BadParameter(
-                f"'target_variables.{variable_name}.weight' cannot be negative."
-            )
+            if weight < 0:
+                raise typer.BadParameter(
+                    f"'target_variables.{variable_name}.weight' cannot be negative."
+                )
 
         total_weight += weight
+
         parsed_target_variables[variable_name] = {
             "observed_data_path": Path(str(output_path)).expanduser(),
             "weight": weight,
         }
 
-    if not abs(total_weight - 1.0) <= 1e-9:
+    if not use_equal_weights and abs(total_weight - 1.0) > 1e-9:
         raise typer.BadParameter(
             f"The sum of target variable weights must equal 1.0; got {total_weight}."
         )
