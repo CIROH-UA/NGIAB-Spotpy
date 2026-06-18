@@ -149,8 +149,8 @@ target_variables:
     observed_data_path: "/path/to/observed_streamflow.csv"
     weight: 0.6
     ET:
-    observed_data_path: "/Users/slama/Downloads/openetdownloadprocess/daily/et_daily_mean_2016_2023.csv"
-    weights: 0.3
+    observed_data_path: "/path/to/observed_ET.csv"
+    weights: 0.4
 
 algorithm: "DDS"
 objective_function: "KGE"
