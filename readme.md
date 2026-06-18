@@ -226,11 +226,11 @@ Each target variable must define `observed_data_path`. Weights are optional when
 
 | Field | Type | Default | Options | Description |
 | --- | --- | --- | --- | --- |
-| `algorithm` | string | `DDS` | `SCE`, `DDS` | Search algorithm used by SPOTPY |
+| `algorithm` | string | `DDS` | `SCE`, `DDS`, `NSGAII`| Search algorithm used by SPOTPY |
 | `objective_function` | string | `KGE` | `KGE`, `RMSE` | Metric used to score each parameter set |
 | `repetitions` | integer | `100` | positive integer | Number of optimization iterations |
 | `dds_trials` | integer | `1` | positive integer | DDS restart trials (used only when `algorithm: "DDS"`) |
-| `n_pop` | integer | `10` | positive integer | Population size for supported SPOTPY algorithms |
+| `n_pop` | integer | `10` | positive integer | Population size for NSGAII (will be ignored when other algorithm is used)| 
 | `execution_mode` | string | `parallel` | `serial`, `parallel` | Controls MPI behavior |
 | `merge_catchment` | bool-like value | `true` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
 | `merge_area` | float | `200` | positive float | Catchment area threshold in square km used to merge divides |
