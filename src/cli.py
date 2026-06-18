@@ -219,7 +219,7 @@ def calibration(
         feature_id = int(get_feature_id(clone_root))
         comm.Barrier()
 
-        best_params = run_spotpy(
+        best_params, best_params_index = run_spotpy(
             gage_id,
             start_date,
             end_date,
@@ -244,10 +244,16 @@ def calibration(
 
         if rank == 0:
             output_file = data_dir / "calibration" / "spotpy" / "best_params.csv"
+
             with open(output_file, "w") as file:
-                header = ",".join([name[3:] for name in best_params[0].dtype.names])
+                header = ",".join(
+                    ["best_index"] + [name[3:] for name in best_params[0].dtype.names]
+                )
                 file.write(header + "\n")
-                values = ",".join([str(value) for value in best_params[0]])
+
+                values = ",".join(
+                    [str(best_params_index)] + [str(value) for value in best_params[0]]
+                )
                 file.write(values + "\n")
 
             print(f"\n{'=' * 60}")
