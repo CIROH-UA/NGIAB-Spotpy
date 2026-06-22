@@ -115,12 +115,13 @@ def plot_results(
     optimizer: Any,
     output_dir: str | Path,
     objective_function: str,
-    invert_objective: bool,
+    algorithm_maximizes: bool,
+    best_is_higher: bool,
 ) -> None:
-    # plot_parametertrace(results=results, output_folder=output_dir)
-    # plot_parameterInteraction(results=results, output_folder=output_dir)
-    plot_bestmodelrun(results=results, optimizer=optimizer, objective_function=objective_function, invert_objective=invert_objective, output_folder=output_dir)
-    # plot_parameter_correlation(results=results, output_folder=output_dir)
+    plot_parametertrace(results=results, output_folder=output_dir)
+    plot_parameterInteraction(results=results, output_folder=output_dir)
+    plot_bestmodelrun(results=results, optimizer=optimizer, objective_function=objective_function, algorithm_maximizes=algorithm_maximizes, best_is_higher=best_is_higher,output_folder=output_dir)
+    plot_parameter_correlation(results=results, output_folder=output_dir)
 
 
 def _update_parameters(file_path: Path, param_updates: dict[str, Any], model_type_name: str) -> None:
@@ -332,16 +333,23 @@ def merge_and_prepare_forcing(
     return groups
 
 
-def create_directories(data_dir: Path) -> Path:
+def create_directories(data_dir: Path, objective_function: str) -> Path:
     """Create necessary directories for Calibration before hand to avoid race conditions when multiple processes are trying to create the same directory at the same time."""
-    (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True, exist_ok=True)
 
     #just for sanity
     if (data_dir / "calibration" / "temp_runs").exists():
         shutil.rmtree(data_dir / "calibration" / "temp_runs")
+    
+        #just for sanity
+    if (data_dir / "calibration" / "tensorboard_logs").exists():
+        shutil.rmtree(data_dir / "calibration" / "tensorboard_logs")
 
-    if (data_dir / "calibration" / "spotpy" / "KGE_history.csv").exists():
-        Path.unlink(data_dir / "calibration" / "spotpy" / "KGE_history.csv")
+    #delete this to avoid output clutter
+    if (data_dir / "calibration" / "spotpy").exists():
+        shutil.rmtree(data_dir / "calibration" / "spotpy")
+
+
+    (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True, exist_ok=True)
 
     #create clone root diretory inside "Temp_Runs" to keep the main directory clean and untouched 
     clone_root = data_dir / "calibration" / "temp_runs" / f"{data_dir.name}"

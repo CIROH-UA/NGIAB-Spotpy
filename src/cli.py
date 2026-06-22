@@ -222,7 +222,7 @@ def calibration(
     comm.Barrier()
     try:
         if rank == 0:
-            clone_root = create_directories(data_dir)
+            clone_root = create_directories(data_dir, objective_function)
             prepare_config(
                 clone_root,
                 execution_mode=execution_mode,

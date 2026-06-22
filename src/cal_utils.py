@@ -465,34 +465,7 @@ class SpotpySetup:
 
         #if norm is false, the objective metric is simply the sum of weighted KGE
         if not self.norm: 
-            objective_metric = float(np.sum(objective_list))
-
-        if self.writer:
-            self.writer.add_scalar(
-                "Metrics/Objective_Function",
-                objective_metric,
-                self.run_id,
-            )
-            if self.run_id % 10 == 0:
-                fig, ax = plt.subplots(figsize=(12, 6))
-                ax.bar(
-                    [var_name for var_name, _ in target_variable_items],
-                    weighted_objective_list,
-                )
-                ax.set_title(
-                    f"Iteration {self.run_id} - Weighted Objective: {objective_metric:.3f}"
-                )
-                ax.set_xlabel("Target variable")
-                ax.set_ylabel("Weighted objective")
-                ax.grid(True, alpha=0.3)
-                self.writer.add_figure(
-                    "Metrics/Weighted_Objective_Contributions",
-                    fig,
-                    self.run_id,
-                )
-                plt.close(fig)
-            self.writer.flush()
-        
+            objective_metric = float(np.sum(objective_list))        
 
         if self.norm:
             total_sum = 0
@@ -521,7 +494,37 @@ class SpotpySetup:
                 if self.objective_function_name == "KGE":
                     objective_metric = objective_metric - 1
 
-        csv_row["total_weighted_objective"] = objective_metric
+        if self.norm:
+            csv_row["total_weighted_objective (norm)"] = objective_metric
+        else:
+            csv_row["total_weighted_objective (weighted)"] = objective_metric
+
+        if self.writer:
+            self.writer.add_scalar(
+                "Metrics/Objective_Function",
+                objective_metric,
+                self.run_id,
+            )
+            if self.run_id % 10 == 0:
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.bar(
+                    [var_name for var_name, _ in target_variable_items],
+                    weighted_objective_list,
+                )
+                ax.set_title(
+                    f"Iteration {self.run_id} - Weighted Objective: {objective_metric:.3f}"
+                )
+                ax.set_xlabel("Target variable")
+                ax.set_ylabel("Weighted objective")
+                ax.grid(True, alpha=0.3)
+                self.writer.add_figure(
+                    "Metrics/Weighted_Objective_Contributions",
+                    fig,
+                    self.run_id,
+                )
+                plt.close(fig)
+            self.writer.flush()
+
         csv_path = self.calibration_dir / "spotpy" / f"{self.objective_function_name}_history.csv"
         pd.DataFrame([csv_row]).to_csv(
             csv_path,
@@ -680,13 +683,16 @@ def run_spotpy(
                 sampler.sample(generations=repetitions, n_obj=1, n_pop=nsgaii_population)
                 
     results = sampler.getdata()
+    
     # Final results to TensorBoard
     best_params = spotpy.analyser.get_best_parameterset(results, maximize=best_is_higher)
-
     best_params_value = best_params[0]
 
-    best_params_index, _ = spotpy.analyser.get_maxlikeindex(results, verbose=False)
-    best_params_index = best_params_index[0][0]
+    if algorithm_maximizes:
+        best_params_index, _ = spotpy.analyser.get_maxlikeindex(results, verbose=False)
+        best_params_index = best_params_index[0][0]
+    else:
+        best_params_index, _ = spotpy.analyser.get_minlikeindex(results, verbose=False)
 
     # breakpoint()
 
@@ -700,8 +706,8 @@ def run_spotpy(
         log_parameters_from_spotpy_csv(writer, csv_path, params_names_list)
         writer.close()
 
-    # # # Generate standard plots
-    # plot_results(results, optimizer, calibration_dir / "spotpy" / "plots", objective_function, invert_objective)
+    # Generate standard plots
+    plot_results(results, optimizer, calibration_dir / "spotpy" / "plots", objective_function, algorithm_maximizes, best_is_higher)
 
     print(f"\nTensorBoard logs saved to: {run_log_dir}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results\n\n")
