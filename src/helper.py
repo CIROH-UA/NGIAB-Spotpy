@@ -5,7 +5,7 @@ import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any, DefaultDict, Iterable, Sequence
+from typing import Any, DefaultDict, Sequence
 import pandas as pd
 import yaml
 from dataretrieval import nwis
@@ -23,6 +23,7 @@ from plots import (
     plot_parametertrace,
 )
 import sys
+import typer
 
 
 def parameters_available_bool(
@@ -112,14 +113,15 @@ def log_parameters_from_spotpy_csv(
 
 def plot_results(
     results: Any,
-    observation_data: Any,
+    optimizer: Any,
     output_dir: str | Path,
     objective_function: str,
-    invert_objective: bool,
+    algorithm_maximizes: bool,
+    best_is_higher: bool,
 ) -> None:
     plot_parametertrace(results=results, output_folder=output_dir)
     plot_parameterInteraction(results=results, output_folder=output_dir)
-    plot_bestmodelrun(results=results, evaluation=observation_data, objective_function=objective_function, invert_objective=invert_objective, output_folder=output_dir)
+    plot_bestmodelrun(results=results, optimizer=optimizer, objective_function=objective_function, algorithm_maximizes=algorithm_maximizes, best_is_higher=best_is_higher,output_folder=output_dir)
     plot_parameter_correlation(results=results, output_folder=output_dir)
 
 
@@ -154,7 +156,7 @@ def get_troute_output_name(path: str | Path) -> str:
     return f"troute_output_{start_date.strftime('%Y%m%d%H%M')}.nc"
 
 
-def prepare_config(data_dir: Path, execution_mode: str) -> None:
+def prepare_config(data_dir: Path, execution_mode: str, target_variables: dict) -> None:
     """This function prepares the realization_file and t-route file
     s.t. ngen and routing is done seperately"""
 
@@ -167,9 +169,32 @@ def prepare_config(data_dir: Path, execution_mode: str) -> None:
         realization: dict[str, Any] = json.load(file)
     if "routing" in realization.keys():
         realization.pop("routing", None)
+
+    output_vars = []
+    for var_name in target_variables:
+        if var_name == "streamflow":
+            output_vars.append("Q_OUT")
+        elif var_name == "ET":
+            output_vars.append("ACTUAL_ET")
+        else:
+            output_vars.append("SNEQV")
+
+    for form in realization.get("global", {}).get("formulations", []):
+        if form.get("name") == "bmi_multi":
+            params = form.get("params", {})
+            if "modules" in params:
+                new_params = {}
+                for k, v in params.items():
+                    if k == "modules":
+                        new_params["output_variables"] = output_vars
+                    new_params[k] = v
+                form["params"] = new_params
+            else:
+                params["output_variables"] = output_vars
+                
     with realization_path.open("w") as file:
         json.dump(realization, file, indent=4)
-
+    
     # catchment routing should be done nexus routing is not an option for the merged geopackage
     # this doesn't preserve identation, but that shouldn't be an issue for the routing file
     with troute_path.open("r") as f:
@@ -309,13 +334,23 @@ def merge_and_prepare_forcing(
     return groups
 
 
-def create_directories(data_dir: Path) -> Path:
+def create_directories(data_dir: Path, objective_function: str) -> Path:
     """Create necessary directories for Calibration before hand to avoid race conditions when multiple processes are trying to create the same directory at the same time."""
-    (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True, exist_ok=True)
 
     #just for sanity
     if (data_dir / "calibration" / "temp_runs").exists():
         shutil.rmtree(data_dir / "calibration" / "temp_runs")
+    
+        #just for sanity
+    if (data_dir / "calibration" / "tensorboard_logs").exists():
+        shutil.rmtree(data_dir / "calibration" / "tensorboard_logs")
+
+    #delete this to avoid output clutter
+    if (data_dir / "calibration" / "spotpy").exists():
+        shutil.rmtree(data_dir / "calibration" / "spotpy")
+
+
+    (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True, exist_ok=True)
 
     #create clone root diretory inside "Temp_Runs" to keep the main directory clean and untouched 
     clone_root = data_dir / "calibration" / "temp_runs" / f"{data_dir.name}"
@@ -406,3 +441,178 @@ def process_usgs_streamflow(
         dfo_usgs_hr.to_pickle(Path(output_path))
 
     return dfo_usgs_hr
+
+def adjust_date_index(observed: pd.DataFrame, training_start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+    observed["Time"] = pd.to_datetime(observed["Time"]).dt.tz_localize(None)
+    observed = observed[
+        (observed["Time"] >= training_start_date)
+        & (observed["Time"] <= end_date)
+    ]
+    observed = observed.set_index("Time")
+    return observed
+
+
+def str_to_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    value = str(value)
+    if value.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    if value.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    raise typer.BadParameter("Boolean value expected.")
+
+
+def validate_config_choice(
+    config: dict[str, Any],
+    field: str,
+    uppercase: bool = True,
+) -> None:
+    
+    if field == "algorithm":
+        supported_values = ("SCE", "DDS", "NSGAII")
+    elif field == "objective_function":
+        supported_values = ("KGE", "RMSE")
+    else:
+        supported_values = ("serial", "parallel")
+
+    raw_value = config.get(field)
+    value = str(raw_value).strip()
+    value = value.upper() if uppercase else value.lower()
+
+    if value not in supported_values:
+        allowed = ", ".join(supported_values)
+        raise typer.BadParameter(
+            f"Invalid config value for '{field}': {raw_value!r}. "
+            f"Supported values are: {allowed}."
+        )
+
+    config[field] = value
+
+
+def load_calibration_config(config_path: Path) -> dict[str, Any]:
+    config_path = config_path.expanduser()
+    if not config_path.exists():
+        raise typer.BadParameter(f"Config file does not exist: {config_path}")
+
+    with config_path.open("r") as file:
+        config = yaml.safe_load(file) or {}
+
+    if not isinstance(config, dict):
+        raise typer.BadParameter("Config file must contain a YAML mapping.")
+
+    calibration_config = config.get("calibration", config)
+    if not isinstance(calibration_config, dict):
+        raise typer.BadParameter("The 'calibration' section must be a YAML mapping.")
+
+    required_fields = [
+        "gage_id",
+        "start_date",
+        "end_date",
+        "training_start_date",
+        "data_root",
+        "target_variables",
+    ]
+    missing_fields = [
+        field for field in required_fields if calibration_config.get(field) is None
+    ]
+    if missing_fields:
+        missing = ", ".join(missing_fields)
+        raise typer.BadParameter(f"Missing required config field(s): {missing}")
+
+    defaults = {
+        "algorithm": "DDS",
+        "objective_function": "KGE",
+        "repetitions": 100,
+        "dds_trials": 1,
+        "execution_mode": "parallel",
+        "merge_catchment": True,
+        "merge_area": 200,
+        "n_pop": 10,
+        "norm": False,
+    }
+    config_values = {**defaults, **calibration_config}
+
+    validate_config_choice(config_values, "algorithm")
+    validate_config_choice(config_values, "objective_function")
+    validate_config_choice(config_values, "execution_mode", uppercase=False)
+    config_values["merge_catchment"] = str_to_bool(config_values["merge_catchment"])
+    config_values["norm"] = str_to_bool(config_values["norm"])
+    return config_values
+
+
+def parse_target_variables(target_variables: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(target_variables, dict) or not target_variables:
+        raise typer.BadParameter(
+            "'target_variables' must be a non-empty mapping of variable names to target settings."
+        )
+
+    # Determine weight mode
+    weight_flags = []
+
+    for variable, target_config in target_variables.items():
+        if not isinstance(target_config, dict):
+            raise typer.BadParameter(
+                f"'target_variables.{variable}' must be a mapping with output_path and weight."
+            )
+
+        has_weight = (
+            target_config.get("weight") is not None
+            or target_config.get("weights") is not None
+        )
+        weight_flags.append(has_weight)
+
+    if any(weight_flags) and not all(weight_flags):
+        raise typer.BadParameter(
+            "Either all target variables must define weights, or none of them may define weights."
+        )
+
+    use_equal_weights = not any(weight_flags)
+    equal_weight = 1.0 / len(target_variables)
+
+    parsed_target_variables = {}
+    total_weight = 0.0
+
+    for variable, target_config in target_variables.items():
+        variable_name = str(variable).strip()
+        if not variable_name:
+            raise typer.BadParameter(
+                "'target_variables' contains an empty variable name."
+            )
+
+        output_path = target_config.get("observed_data_path")
+        if output_path is None:
+            raise typer.BadParameter(
+                f"'target_variables.{variable_name}.observed_data_path' must define an observed data path."
+            )
+
+        if use_equal_weights:
+            weight = equal_weight
+        else:
+            weight = target_config.get("weight", target_config.get("weights"))
+
+            try:
+                weight = float(weight)
+            except (TypeError, ValueError) as exc:
+                raise typer.BadParameter(
+                    f"'target_variables.{variable_name}.weight' must be numeric."
+                ) from exc
+
+            if weight < 0:
+                raise typer.BadParameter(
+                    f"'target_variables.{variable_name}.weight' cannot be negative."
+                )
+
+        total_weight += weight
+
+        parsed_target_variables[variable_name] = {
+            "observed_data_path": Path(str(output_path)).expanduser(),
+            "weight": weight,
+        }
+
+    if not use_equal_weights and abs(total_weight - 1.0) > 1e-9:
+        raise typer.BadParameter(
+            f"The sum of target variable weights must equal 1.0; got {total_weight}."
+        )
+
+    return parsed_target_variables

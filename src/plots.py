@@ -7,6 +7,7 @@ import seaborn as sns
 from pathlib import Path
 from typing import Any, Sequence
 from flush_output import suppress_spotpy_syntax_warnings
+from spotpy.objectivefunctions import kge, rmse
 
 suppress_spotpy_syntax_warnings()
 from spotpy.analyser import (
@@ -14,6 +15,7 @@ from spotpy.analyser import (
     get_parameternames,
     get_parameters,
     get_simulation_fields,
+    get_minlikeindex,
 )
 
 # Set seaborn style
@@ -119,86 +121,208 @@ def plot_parameterInteraction(
 
 def plot_bestmodelrun(
     results: Any,
-    evaluation: np.ndarray,
+    optimizer: Any,
     objective_function: str,
-    invert_objective: bool,
-    fig_name: str = "Best_model_run.png",
+    algorithm_maximizes: bool,
+    best_is_higher:bool,
+    fig_name: str = "Best_Model_Run",
     output_folder: str | Path | None = None,
 ) -> None:
     """Plot best model run with seaborn styling"""
+
     # Set style for this plot
     sns.set_style("darkgrid")
 
-    fig, ax = plt.subplots(figsize=(16, 9))
+    evaluation = optimizer.evaluation()
 
-    # Clean evaluation data
-    evaluation = np.array(evaluation, dtype=float)
-    evaluation[evaluation == -9999] = np.nan
+    counter_evaluation = 0
 
-    # Plot observation data with seaborn styling
-    x_obs = range(len(evaluation))
-    sns.scatterplot(
-        x=x_obs, y=evaluation, color="crimson", s=20, alpha=0.7, label="Observation data", ax=ax
-    )
+    for i, key in enumerate(optimizer.model.target_variables.keys()):
 
-    # Get best simulation
-    simulation_fields = get_simulation_fields(results)
-    bestindex, bestobjf = get_maxlikeindex(results, verbose=False)
-    best_simulation = list(results[simulation_fields][bestindex][0])
+        # Clean evaluation data
+        evaluation_key = np.array(evaluation[i], dtype=float)
+        evaluation_key[evaluation_key == -9999] = np.nan
 
-    #reversing what is done in the objective_function of spotpy
-    if invert_objective:
-        if objective_function == "KGE":
-            bestobjf = 1 - bestobjf
+        # Get best simulation indices
+        simulation_fields = get_simulation_fields(results)
+
+        if algorithm_maximizes:
+            bestindex, bestobjf = get_maxlikeindex(results, verbose=False)
+            bestindex = bestindex[0][0]
         else:
-            bestobjf = -bestobjf
-    else:
+            bestindex, bestobjf = get_minlikeindex(results, verbose=False)
+
+        history_df = pd.read_csv(output_folder.parent / f"{objective_function}_history.csv")
+        column_name = f"{objective_function}_{key}"
+        if best_is_higher:
+            bestindexindividual = history_df[column_name].idxmax()
+        else:
+            bestindexindividual = history_df[column_name].idxmin()
+
+        bestindividualobjf = history_df[column_name].iloc[bestindexindividual]
+
+        # Extract simulations
+        best_simulation = list(
+            results[simulation_fields][bestindex]
+        )[counter_evaluation:counter_evaluation + len(evaluation_key)]
+
+        best_simulation_individual = list(
+            results[simulation_fields][bestindexindividual]
+        )[counter_evaluation:counter_evaluation + len(evaluation_key)]
+
         if objective_function == "KGE":
-            bestobjf = bestobjf + 1
+            bestobjf_without_invert = kge(evaluation_key,best_simulation)
+        else:
+            bestobjf_without_invert = rmse(evaluation_key,best_simulation)
 
-    # Plot best simulation with seaborn
-    x_sim = range(len(best_simulation))
-    sns.lineplot(
-        x=x_sim,
-        y=best_simulation,
-        color="royalblue",
-        linewidth=2,
-        label=f"Best simulation (Obj={bestobjf:.2f})",
-        ax=ax,
-    )
+        # ================================
+        # Plot best simulation
+        # ================================
 
-    # Customize plot
-    ax.set_xlabel("Number of Observation Points", fontsize=12)
-    ax.set_ylabel("Simulated Value", fontsize=12)
-    ax.set_title("Best Model Run", fontsize=14, fontweight="bold")
+        fig, ax = plt.subplots(figsize=(16, 9))
 
-    # Improve legend
-    ax.legend(loc="upper right", frameon=True, fancybox=True, shadow=True, fontsize=11)
+        sns.scatterplot(
+            x=range(len(evaluation_key)),
+            y=evaluation_key,
+            color="crimson",
+            s=20,
+            alpha=0.7,
+            label="Observation data",
+            ax=ax,
+        )
 
-    # Add subtle styling
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+        sns.lineplot(
+            x=range(len(best_simulation)),
+            y=best_simulation,
+            color="royalblue",
+            linewidth=2,
+            label=f"Best simulation (weighted_objective_func={bestobjf:.2f}) ({objective_function} = {bestobjf_without_invert})",
+            ax=ax,
+        )
 
-    plt.tight_layout()
+        ax.set_xlabel("Number of Observation Points", fontsize=12)
+        ax.set_ylabel(f"Simulated Value_{key}", fontsize=12)
+        ax.set_title(f"Best Model Run {key}. Iteration {bestindex}", fontsize=14, fontweight="bold")
 
-    # Handle output folder
-    if output_folder:
-        output_folder = Path(output_folder)
-        output_folder.mkdir(parents=True, exist_ok=True)
-        save_path = output_folder / fig_name
-        csv_path = output_folder / "Best_model_run.csv"
-    else:
-        save_path = Path(fig_name)
-        csv_path = Path("Best_model_run.csv")
+        ax.legend(
+            loc="upper right",
+            frameon=True,
+            fancybox=True,
+            shadow=True,
+            fontsize=11,
+        )
 
-    fig.savefig(save_path, dpi=300, bbox_inches="tight")
-    print(f"A plot of the best model run has been saved as {save_path}")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
 
-    with open(csv_path, "w") as f:
-        f.write("index,observed,simulated\n")
-        for i, (obs, sim) in enumerate(zip(evaluation, best_simulation)):
-            f.write(f"{i},{obs},{sim}\n")
-    print(f"Observed vs best simulated saved to {csv_path}")
+        plt.tight_layout()
+
+
+        # Save first plot
+        if output_folder:
+            output_folder = Path(output_folder)
+            output_folder.mkdir(parents=True, exist_ok=True)
+
+            save_path = output_folder / f"{fig_name}_{key}.png"
+            csv_path = output_folder / f"{fig_name}_{key}.csv"
+
+        else:
+            save_path = Path(f"{fig_name}_{key}.png")
+            csv_path = Path(f"{fig_name}_{key}.csv")
+
+
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
+        print(f"Best simulation plot saved as {save_path}")
+
+
+        with open(csv_path, "w") as f:
+            f.write("index,observed,simulated\n")
+
+            for idx, (obs, sim) in enumerate(zip(evaluation_key, best_simulation)):
+                f.write(f"{idx},{obs},{sim}\n")
+
+        print(f"Best simulation CSV saved as {csv_path}")
+
+
+
+        # ================================
+        # Plot best individual simulation
+        # ================================
+
+        fig_name = "Best_Individual_Run"
+        fig, ax = plt.subplots(figsize=(16, 9))
+
+
+        sns.scatterplot(
+            x=range(len(evaluation_key)),
+            y=evaluation_key,
+            color="crimson",
+            s=20,
+            alpha=0.7,
+            label="Observation data",
+            ax=ax,
+        )
+
+
+        sns.lineplot(
+            x=range(len(best_simulation_individual)),
+            y=best_simulation_individual,
+            color="orange",
+            linewidth=2,
+            label=f"Best individual simulation ({objective_function}={bestindividualobjf:.2f})",
+            ax=ax,
+        )
+
+
+        ax.set_xlabel("Number of Observation Points", fontsize=12)
+        ax.set_ylabel(f"Simulated Value_{key}", fontsize=12)
+        ax.set_title(
+            f"Best Individual Model Run {key}. Iteration {bestindexindividual}",
+            fontsize=14,
+            fontweight="bold",
+        )
+
+
+        ax.legend(
+            loc="upper right",
+            frameon=True,
+            fancybox=True,
+            shadow=True,
+            fontsize=11,
+        )
+
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        plt.tight_layout()
+
+
+        # Save second plot
+        if output_folder:
+            save_path = output_folder / f"{fig_name}_{key}.png"
+            csv_path = output_folder / f"Best_model_run_{key}.csv"
+
+        else:
+            save_path = Path(f"{fig_name}_{key}.png")
+            csv_path = Path(f"{fig_name}_{key}.csv")
+
+
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
+        print(f"Best individual plot saved as {save_path}")
+
+
+        with open(csv_path, "w") as f:
+            f.write("index,observed,simulated\n")
+
+            for idx, (obs, sim) in enumerate(zip(evaluation_key, best_simulation_individual)):
+                f.write(f"{idx},{obs},{sim}\n")
+
+        print(f"Best individual CSV saved as {csv_path}")
+        counter_evaluation += len(evaluation_key)
 
 
 # Optional: Add a new function for correlation heatmap

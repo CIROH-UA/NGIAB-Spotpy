@@ -9,7 +9,7 @@ This project calibrates NextGen model parameters with SPOTPY and supports both s
 - [Installation](#installation)
 - [Expected Data Layout](#expected-data-layout)
 - [Quick Start](#quick-start)
-- [Command Line Arguments](#command-line-arguments)
+- [Configuration](#configuration)
 - [Execution Modes](#execution-modes)
 - [Understanding the Output](#understanding-the-output)
 - [Monitoring Progress](#monitoring-progress)
@@ -44,7 +44,11 @@ This code:
    ```bash
    git clone https://github.com/slama0077/NGIAB-Spotpy_SL.git 
    ```
-2. Install OpenMPI.
+2. Checkout the branch.
+   ```bash
+   git checkout Multi_Objective
+   ```
+3. Install OpenMPI.
    - macOS:
      ```bash
      brew install openmpi
@@ -53,11 +57,11 @@ This code:
      ```bash
      sudo apt install openmpi-bin
      ```
-3. Verify MPI:
+4. Verify MPI:
    ```bash
    mpirun --version
    ```
-4. Install C compiler, Fortran, Rust/Cargo, and the routing package:
+5. Install C compiler, Fortran, Rust/Cargo, and the routing package:
    - Linux (Debian/Ubuntu):
      ```bash
      sudo apt install build-essential gfortran
@@ -83,6 +87,7 @@ This code:
      ```
 5. Create and activate a virtual environment:
    ```bash
+   cd NGIAB-Spotpy_SL
    python -m venv .venv
    source .venv/bin/activate
    ```
@@ -110,7 +115,7 @@ Before running calibration, `data_root` should contain a folder for your gage an
 
 Example:
 
-- If your files are in `/tmp/ngen/gage-10163000/config/realization.json`, then `--data_root` should be `/tmp/ngen`.
+- If your files are in `/tmp/ngen/gage-10163000/config/realization.json`, then `data_root` in `config.yaml` should be `/tmp/ngen`.
 
 ## Quick Start
 
@@ -126,70 +131,110 @@ If you are unsure where the generated data lives, check:
 cat ~/.ngiab/preprocessor
 ```
 
-### 2) Run serial mode (Do not forget to change /path/to/data_root)
+### 2) Edit `config.yaml`
 
-```bash
-python -u -m calibration --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode serial
+All calibration inputs are controlled through `config.yaml`, including the gage ID, date range, data root, calibration settings, and execution mode.
+
+Example:
+
+```yaml
+gage_id: "10163000"
+start_date: "2015-06-15"
+end_date: "2015-08-15"
+training_start_date: "2015-07-15"
+data_root: /path/to/data_root
+
+target_variables:
+  streamflow:
+    observed_data_path: "/path/to/observed_streamflow.csv"
+    weight: 0.6
+    ET:
+    observed_data_path: "/path/to/observed_ET.csv"
+    weights: 0.4
+
+algorithm: "DDS"
+objective_function: "KGE"
+repetitions: 100
+dds_trials: 1
+n_pop: 10
+execution_mode: "serial"
+merge_catchment: False
 ```
 
-Or using the installed entry point:
+If target-variable weights are omitted, each target receives equal weight. If any target variable defines `weight` or `weights`, all target variables must define weights and the weights must sum to `1.0`.
+
+### 3) Run serial mode
 
 ```bash
-PYTHONUNBUFFERED=1 calibration --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode serial
+python -m calibration --config config.yaml
 ```
 
-### 3) Run parallel mode with merge_catchment feature (recommended for speed)
+### 4) Run parallel mode with merge_catchment feature (recommended for speed)
+
+Set these values in `config.yaml`:
+
+```yaml
+execution_mode: "parallel"
+merge_catchment: true
+```
+
+Then run with MPI:
 
 ```bash
-mpirun -n 11 --oversubscribe python -u -m calibration --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode parallel --merge_catchment True
+mpirun -n 11 --oversubscribe python -m calibration --config config.yaml
 ```
 
-Or using the installed entry point:
+
+## Configuration
+
+The command line only selects the YAML file:
 
 ```bash
-PYTHONUNBUFFERED=1 mpirun -n 11 --oversubscribe calibration --gage_id 10163000 --start_date 2015-06-15 --end_date 2015-08-15 --training_start_date 2015-07-15 --data_root /path/to/data_root --execution_mode parallel --merge_catchment True
+calibration --config config.yaml
 ```
 
-Unbuffered output notes:
+or:
 
-- Python buffers stdout when output is redirected or not attached to a terminal, which can make logs appear late or in bursts.
-- Use `-u` with `python` or `PYTHONUNBUFFERED=1` to force line-by-line output for live monitoring.
+```bash
+calibration -c config.yaml
+```
 
-### Optional Arguments and Defaults (all optional)
+### Required Config Fields
 
-- `--algorithm` (default: `DDS`, options: `SCE`, `DDS`)
-- `--objective_function` (default: `KGE`, options: `KGE`, `RMSE`)
-- `--repetitions` (default: `100`)
-- `--dds_trials` (default: `1`)
-- `--execution_mode` (default: `parallel`, options: `serial`, `parallel`)
-- `--merge_catchment` (default: `True`, bool-like string)
-- `--merge_area` (default: `330`)
-
-## Command Line Arguments
-
-### Required Arguments
-
-| Argument | Type | Description | Example |
+| Field | Type | Description | Example |
 | --- | --- | --- | --- |
-| `--gage_id` | string | USGS gage ID used for observed flow retrieval and folder naming | `10163000` |
-| `--start_date` | string | Full simulation start date (`YYYY-MM-DD`) | `2015-06-15` |
-| `--end_date` | string | Full simulation end date (`YYYY-MM-DD`) | `2015-08-15` |
-| `--training_start_date` | string | Start of the calibration/evaluation window inside the simulation period | `2015-07-15` |
-| `--data_root` | string | Parent folder containing `gage-{gage_id}` | `/home/user/data` |
+| `gage_id` | string | USGS gage ID used for observed flow retrieval and folder naming | `10163000` |
+| `start_date` | string | Full simulation start date (`YYYY-MM-DD`) | `2015-06-15` |
+| `end_date` | string | Full simulation end date (`YYYY-MM-DD`) | `2015-08-15` |
+| `training_start_date` | string | Start of the calibration/evaluation window inside the simulation period | `2015-07-15` |
+| `data_root` | string | Parent folder containing `gage-{gage_id}` | `/home/user/data` |
+| `target_variables` | mapping | Observed data files and optional weights for each calibration target | see below |
 
-### Optional Arguments
+### `target_variables`
 
-| Argument | Type | Default | Options | Description |
+```yaml
+target_variables:
+  streamflow:
+    observed_data_path: "/path/to/observed_streamflow.csv"
+    weight: 1.0
+```
+
+Each target variable must define `observed_data_path`. Weights are optional when all targets should receive equal weight.
+
+### Optional Config Fields
+
+| Field | Type | Default | Options | Description |
 | --- | --- | --- | --- | --- |
-| `--algorithm` | string | `DDS` | `SCE`, `DDS` | Search algorithm used by SPOTPY |
-| `--objective_function` | string | `KGE` | `KGE`, `RMSE` | Metric used to score each parameter set |
-| `--repetitions` | integer | `100` | positive integer | Number of optimization iterations |
-| `--dds_trials` | integer | `1` | positive integer | DDS restart trials (used only when `--algorithm DDS`) |
-| `--execution_mode` | string | `parallel` | `serial`, `parallel` | Controls MPI behavior |
-| `--merge_catchment` | bool-like string | `True` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
-| `--merge_area` | float | `330` | positive float | Catchment area threshold in square km used to merge divides |
+| `algorithm` | string | `DDS` | `SCE`, `DDS`, `NSGAII`| Search algorithm used by SPOTPY |
+| `objective_function` | string | `KGE` | `KGE`, `RMSE` | Metric used to score each parameter set |
+| `repetitions` | integer | `100` | positive integer | Number of optimization iterations |
+| `dds_trials` | integer | `1` | positive integer | DDS restart trials (used only when `algorithm: "DDS"`) |
+| `n_pop` | integer | `10` | positive integer | Population size for NSGAII (will be ignored when other algorithm is used)| 
+| `execution_mode` | string | `parallel` | `serial`, `parallel` | Controls MPI behavior |
+| `merge_catchment` | bool-like value | `true` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
+| `merge_area` | float | `200` | positive float | Catchment area threshold in square km used to merge divides |
 
-### Argument Notes
+### Config Notes
 
 - `start_date` to `end_date` defines the simulation span.
 - `training_start_date` to `end_date` defines the objective-function evaluation window.
@@ -208,13 +253,13 @@ python -m calibration --help
 
 - Runs with one process (no MPI worker pool).
 - Best for debugging and first-run validation.
-- Command pattern:
-  `python -m calibration ... --execution_mode serial`
+- Set `execution_mode: "serial"` in `config.yaml`.
 
 ### Parallel Mode
 
 - Runs with MPI workers for faster calibration.
 - Rank 0 is coordinator; worker ranks execute simulations.
+- Set `execution_mode: "parallel"` in `config.yaml`.
 - If you need `N` worker simulations, use `mpirun -n N+1`.
   - Example: 10 workers -> `mpirun -n 11`.
 
@@ -275,7 +320,7 @@ Useful dashboards:
 Use `--oversubscribe` with `mpirun`:
 
 ```bash
-PYTHONUNBUFFERED=1 mpirun -n 20 --oversubscribe calibration [arguments]
+mpirun -n 20 --oversubscribe calibration --config config.yaml
 ```
 
 ### Issue: Process hangs or does not complete
@@ -348,12 +393,12 @@ You can change which parameters are calibrated (and their bounds/initial guesses
 - `DDS`:
   - typically faster to useful solutions
   - efficient for high-dimensional tuning
-  - tune `--dds_trials` for exploration depth
+  - tune `dds_trials` in `config.yaml` for exploration depth
 
 ### Recommended Workflow
 
-1. Run a short serial smoke test (`--repetitions 10`).
-2. Run parallel calibration with moderate iterations (`100-200`).
+1. Run a short serial smoke test (`repetitions: 10`).
+2. Run parallel calibration with moderate iterations (`repetitions: 100-200`).
 3. Inspect TensorBoard and `spotpy_results_*.csv` for convergence.
 4. Increase repetitions if objective trend is still improving.
 5. Validate best parameters on a different time period.
