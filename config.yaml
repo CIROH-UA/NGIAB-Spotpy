@@ -13,7 +13,7 @@ target_variables:
     weights: 0.3
 
 
-algorithm: "DDS". #Available [DDS, NSGAII, SCE-UA]
+algorithm: "DDS" #Available [DDS, NSGAII, SCE-UA]
 objective_function: "KGE" #Available [KGE, RMSE]
 repetitions: 10
 dds_trials: 1  #used for DDS, if other algorithm usedm will be ignored
