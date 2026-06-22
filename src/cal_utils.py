@@ -352,9 +352,9 @@ class SpotpySetup:
             if var_name == "streamflow":
                 evaluation_list.append(self.model.observed_streamflow["values"].values)
             elif var_name == "ET":
-                evaluation_list.append(self.model.observed_ET.values.squeeze())
+                evaluation_list.append(self.model.observed_ET["values"].values)
             elif var_name == "SWE":
-                evaluation_list.append(self.model.observed_SWE.values.squeeze())
+                evaluation_list.append(self.model.observed_SWE["values"].values)
         return evaluation_list
 
     def objectivefunction(self, simulation: list[np.ndarray], evaluation: list[np.ndarray]) -> float:
