@@ -148,10 +148,12 @@ class NextGenSetup:
 
     def evaluate_streamflow(self, tmp_root: Path, feature_id: int) -> np.ndarray:
         ds = xr.open_dataset(self.troute_output_path)
-        simulated = ds["flow"].sel(feature_id=feature_id).values
-        # actual_start = min(self.training_start_date, self.observed_streamflow.index[0])
-        simulated = simulated[(ds["time"] >= self.training_start_date) & (ds["time"] <= self.end_date)]
-        # simulated = simulated[: len(self.observed_streamflow) - 1]
+        sim_df = pd.Series(
+            ds["flow"].sel(feature_id=feature_id).values,
+            index=pd.DatetimeIndex(ds["time"].values)
+        )
+        simulated = sim_df.reindex(self.observed_streamflow.index).values
+        simulated = np.array(simulated)
         return simulated
     
     def evaluate_ET_SWE(self, tmp_root: Path, column: str) -> np.ndarray:
