@@ -148,15 +148,16 @@ target_variables:
   streamflow:
     observed_data_path: "/path/to/observed_streamflow.csv"
     weight: 0.6
-    ET:
+  ET:
     observed_data_path: "/path/to/observed_ET.csv"
-    weights: 0.4
+    weight: 0.4
 
 algorithm: "DDS"
 objective_function: "KGE"
 repetitions: 100
 dds_trials: 1
 n_pop: 10
+norm: false
 execution_mode: "serial"
 merge_catchment: False
 ```
@@ -230,6 +231,7 @@ Each target variable must define `observed_data_path`. Weights are optional when
 | `repetitions` | integer | `100` | positive integer | Number of optimization iterations |
 | `dds_trials` | integer | `1` | positive integer | DDS restart trials (used only when `algorithm: "DDS"`) |
 | `n_pop` | integer | `10` | positive integer | Population size for NSGAII (will be ignored when other algorithm is used)| 
+| `norm` | bool-like value | `false` | `true/false`, `yes/no`, `1/0` | Combine multiple target-variable scores using a normalized distance-style objective instead of the weighted sum |
 | `execution_mode` | string | `parallel` | `serial`, `parallel` | Controls MPI behavior |
 | `merge_catchment` | bool-like value | `true` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
 | `merge_area` | float | `200` | positive float | Catchment area threshold in square km used to merge divides |
@@ -238,6 +240,7 @@ Each target variable must define `observed_data_path`. Weights are optional when
 
 - `start_date` to `end_date` defines the simulation span.
 - `training_start_date` to `end_date` defines the objective-function evaluation window.
+- `norm: false` uses the target-variable weights and combines scores as a weighted sum. `norm: true` ignores those weights during objective aggregation and combines target-variable scores as a single normalized distance-style score. For KGE, this is based on distance from the ideal value of `1`; for RMSE, it combines the RMSE values directly.
 - For DDS, increasing `dds_trials` can improve exploration but increases runtime.
 - Higher `repetitions` usually improves calibration quality but increases runtime linearly.
 
