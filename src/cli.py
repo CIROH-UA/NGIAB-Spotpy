@@ -27,6 +27,33 @@ def str_to_bool(value: object) -> bool:
     raise typer.BadParameter("Boolean value expected.")
 
 
+def validate_config_choice(
+    config: dict[str, Any],
+    field: str,
+    uppercase: bool = True,
+) -> None:
+    
+    if field == "algorithm":
+        supported_values = ("SCE", "DDS", "NSGAII")
+    elif field == "objective_function":
+        supported_values = ("KGE", "RMSE")
+    else:
+        supported_values = ("serial", "parallel")
+
+    raw_value = config.get(field)
+    value = str(raw_value).strip()
+    value = value.upper() if uppercase else value.lower()
+
+    if value not in supported_values:
+        allowed = ", ".join(supported_values)
+        raise typer.BadParameter(
+            f"Invalid config value for '{field}': {raw_value!r}. "
+            f"Supported values are: {allowed}."
+        )
+
+    config[field] = value
+
+
 def load_calibration_config(config_path: Path) -> dict[str, Any]:
     config_path = config_path.expanduser()
     if not config_path.exists():
@@ -65,10 +92,17 @@ def load_calibration_config(config_path: Path) -> dict[str, Any]:
         "execution_mode": "parallel",
         "merge_catchment": True,
         "merge_area": 200,
-        "n_pop" : 10,
+        "n_pop": 10,
         "norm": False,
     }
-    return {**defaults, **calibration_config}
+    config_values = {**defaults, **calibration_config}
+
+    validate_config_choice(config_values, "algorithm")
+    validate_config_choice(config_values, "objective_function")
+    validate_config_choice(config_values, "execution_mode", uppercase=False)
+    config_values["merge_catchment"] = str_to_bool(config_values["merge_catchment"])
+    config_values["norm"] = str_to_bool(config_values["norm"])
+    return config_values
 
 
 def parse_target_variables(target_variables: Any) -> dict[str, dict[str, Any]]:
@@ -160,7 +194,6 @@ def calibration(
     ],
 ) -> int:
     config_values = load_calibration_config(config)
-
     target_variables = parse_target_variables(config_values["target_variables"])
     gage_id = str(config_values["gage_id"])
     start_date = str(config_values["start_date"])
@@ -172,13 +205,13 @@ def calibration(
     repetitions = int(config_values["repetitions"])
     dds_trials = int(config_values["dds_trials"])
     execution_mode = str(config_values["execution_mode"])
-    merge_catchment = bool(config_values["merge_catchment"])
+    merge_catchment = config_values["merge_catchment"]
     merge_area = float(config_values["merge_area"])
     n_pop = int(config_values["n_pop"])
-    norm = bool(config_values["norm"])
+    norm = config_values["norm"]
 
     data_root = data_root.expanduser()
-    merge_catchment_bool = str_to_bool(merge_catchment) 
+    merge_catchment_bool = merge_catchment
 
     args = SimpleNamespace(
         gage_id=gage_id,
