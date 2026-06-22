@@ -158,8 +158,7 @@ repetitions: 100
 dds_trials: 1
 n_pop: 10
 execution_mode: "serial"
-merge_catchment: true
-merge_area: 200
+merge_catchment: False
 ```
 
 If target-variable weights are omitted, each target receives equal weight. If any target variable defines `weight` or `weights`, all target variables must define weights and the weights must sum to `1.0`.

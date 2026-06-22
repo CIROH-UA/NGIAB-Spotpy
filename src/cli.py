@@ -172,9 +172,10 @@ def calibration(
     repetitions = int(config_values["repetitions"])
     dds_trials = int(config_values["dds_trials"])
     execution_mode = str(config_values["execution_mode"])
-    merge_catchment = config_values["merge_catchment"]
+    merge_catchment = bool(config_values["merge_catchment"])
     merge_area = float(config_values["merge_area"])
     n_pop = int(config_values["n_pop"])
+    norm = bool(config_values["norm"])
 
     data_root = data_root.expanduser()
     merge_catchment_bool = str_to_bool(merge_catchment) 
@@ -193,6 +194,7 @@ def calibration(
         merge_catchment_bool=merge_catchment_bool,
         merge_area=merge_area,
         target_variables=target_variables,
+        norm = norm,
     )
 
     data_dir = data_root / f"gage-{gage_id}"
@@ -253,6 +255,7 @@ def calibration(
             rank,
             algorithm=algorithm,
             objective_function=objective_function,
+            norm = norm,
             groups=groups,
             merge_catchment=merge_catchment_bool,
             calibration_params=CALIBRATION_PARAMS,
