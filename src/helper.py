@@ -5,7 +5,7 @@ import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any, DefaultDict, Iterable, Sequence
+from typing import Any, DefaultDict, Sequence
 import pandas as pd
 import yaml
 from dataretrieval import nwis

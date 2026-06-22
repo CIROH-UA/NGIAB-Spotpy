@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 import matplotlib.pyplot as plt
 import mpi4py.MPI as MPI
 import numpy as np
@@ -695,8 +695,6 @@ def run_spotpy(
         best_params_index = best_params_index[0][0]
     else:
         best_params_index, _ = spotpy.analyser.get_minlikeindex(results, verbose=False)
-
-    # breakpoint()
 
     #redefine realization path to the main data directory
     realization_path = calibration_dir.parent / "config" / "realization.json"

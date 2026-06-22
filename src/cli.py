@@ -1,10 +1,9 @@
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Annotated, Any
+from typing import Annotated
 from mpi4py import MPI
 import typer
 import traceback
-import yaml
 from cal_utils import run_spotpy
 from helper import *
 
@@ -160,7 +159,6 @@ def calibration(
         print(f"run_spotpy failed with error: {e} (Process rank {rank})\n\n")
         # restore_data_dir(clone_root)
         traceback.print_exc()
-
     return 0
 
 
