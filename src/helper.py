@@ -23,7 +23,6 @@ from plots import (
     plot_parametertrace,
 )
 import sys
-import typer
 
 
 def parameters_available_bool(
@@ -438,7 +437,7 @@ def process_usgs_streamflow(
         MPI.COMM_WORLD.Abort(0)
 
     if output_path:
-        dfo_usgs_hr.to_pickle(Path(output_path))
+        dfo_usgs_hr.to_csv(Path(output_path))
 
     return dfo_usgs_hr
 
@@ -460,7 +459,17 @@ def str_to_bool(value: object) -> bool:
         return True
     if value.lower() in ("no", "false", "f", "n", "0"):
         return False
-    raise typer.BadParameter("Boolean value expected.")
+    destroy_all_processes("Boolean value expected.")
+    return False
+
+
+def destroy_all_processes(message: str) -> None:
+    rank = MPI.COMM_WORLD.rank
+    for i in range(3):
+        print("\n\n***ERROR ERROR ERROR***\n")
+        print(f"Reported by process number: {rank}")
+        print(f"Message: {message} \n\n\n")
+    MPI.COMM_WORLD.Abort(rank)
 
 
 def validate_config_choice(
@@ -482,10 +491,11 @@ def validate_config_choice(
 
     if value not in supported_values:
         allowed = ", ".join(supported_values)
-        raise typer.BadParameter(
+        destroy_all_processes(
             f"Invalid config value for '{field}': {raw_value!r}. "
             f"Supported values are: {allowed}."
         )
+        return
 
     config[field] = value
 
@@ -493,17 +503,17 @@ def validate_config_choice(
 def load_calibration_config(config_path: Path) -> dict[str, Any]:
     config_path = config_path.expanduser()
     if not config_path.exists():
-        raise typer.BadParameter(f"Config file does not exist: {config_path}")
+        destroy_all_processes(f"Config file does not exist: {config_path}")
 
     with config_path.open("r") as file:
         config = yaml.safe_load(file) or {}
 
     if not isinstance(config, dict):
-        raise typer.BadParameter("Config file must contain a YAML mapping.")
+        destroy_all_processes("Config file must contain a YAML mapping.")
 
     calibration_config = config.get("calibration", config)
     if not isinstance(calibration_config, dict):
-        raise typer.BadParameter("The 'calibration' section must be a YAML mapping.")
+        destroy_all_processes("The 'calibration' section must be a YAML mapping.")
 
     required_fields = [
         "gage_id",
@@ -518,7 +528,7 @@ def load_calibration_config(config_path: Path) -> dict[str, Any]:
     ]
     if missing_fields:
         missing = ", ".join(missing_fields)
-        raise typer.BadParameter(f"Missing required config field(s): {missing}")
+        destroy_all_processes(f"Missing required config field(s): {missing}")
 
     defaults = {
         "algorithm": "DDS",
@@ -541,9 +551,12 @@ def load_calibration_config(config_path: Path) -> dict[str, Any]:
     return config_values
 
 
-def parse_target_variables(target_variables: Any) -> dict[str, dict[str, Any]]:
+# def destroy_all_processes(rank):
+#     MPI.COMM_WORLD.Abort(rank)
+
+def parse_target_variables(target_variables: Any, config_values: dict[str, Any]) -> dict[str, dict[str, Any]]:
     if not isinstance(target_variables, dict) or not target_variables:
-        raise typer.BadParameter(
+        destroy_all_processes(
             "'target_variables' must be a non-empty mapping of variable names to target settings."
         )
 
@@ -552,7 +565,7 @@ def parse_target_variables(target_variables: Any) -> dict[str, dict[str, Any]]:
 
     for variable, target_config in target_variables.items():
         if not isinstance(target_config, dict):
-            raise typer.BadParameter(
+            destroy_all_processes(
                 f"'target_variables.{variable}' must be a mapping with output_path and weight."
             )
 
@@ -563,7 +576,7 @@ def parse_target_variables(target_variables: Any) -> dict[str, dict[str, Any]]:
         weight_flags.append(has_weight)
 
     if any(weight_flags) and not all(weight_flags):
-        raise typer.BadParameter(
+        destroy_all_processes(
             "Either all target variables must define weights, or none of them may define weights."
         )
 
@@ -576,15 +589,22 @@ def parse_target_variables(target_variables: Any) -> dict[str, dict[str, Any]]:
     for variable, target_config in target_variables.items():
         variable_name = str(variable).strip()
         if not variable_name:
-            raise typer.BadParameter(
+            destroy_all_processes(
                 "'target_variables' contains an empty variable name."
             )
 
         output_path = target_config.get("observed_data_path")
         if output_path is None:
-            raise typer.BadParameter(
+            destroy_all_processes(
                 f"'target_variables.{variable_name}.observed_data_path' must define an observed data path."
             )
+   
+        if not Path(output_path).expanduser().exists():
+            if variable_name == "streamflow":
+                print(f"No streamflow data in the {output_path}. So, downloading the streamflow data.")
+                process_usgs_streamflow(config_values["gage_id"], config_values["start_date"], config_values["end_date"], Path(output_path))
+            else:
+                destroy_all_processes(f"The observed data path {output_path} for {variable_name} doesn't exist, and the code doesn't support downloading the data.")
 
         if use_equal_weights:
             weight = equal_weight
@@ -594,12 +614,12 @@ def parse_target_variables(target_variables: Any) -> dict[str, dict[str, Any]]:
             try:
                 weight = float(weight)
             except (TypeError, ValueError) as exc:
-                raise typer.BadParameter(
+                destroy_all_processes(
                     f"'target_variables.{variable_name}.weight' must be numeric."
-                ) from exc
+                )
 
             if weight < 0:
-                raise typer.BadParameter(
+                destroy_all_processes(
                     f"'target_variables.{variable_name}.weight' cannot be negative."
                 )
 
@@ -611,7 +631,7 @@ def parse_target_variables(target_variables: Any) -> dict[str, dict[str, Any]]:
         }
 
     if not use_equal_weights and abs(total_weight - 1.0) > 1e-9:
-        raise typer.BadParameter(
+        destroy_all_processes(
             f"The sum of target variable weights must equal 1.0; got {total_weight}."
         )
 

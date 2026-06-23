@@ -60,7 +60,8 @@ class NextGenSetup:
                 self.observed_SWE = pd.read_csv(var_info["observed_data_path"])
                 self.observed_SWE = adjust_date_index(self.observed_SWE, self.training_start_date, self.end_date)
             else:
-                raise ValueError(f"Unsupported target variable: {var_name}")
+                destroy_all_processes(f"Unsupported target variable: {var_name}")
+                return
     
     def run_model(
         self,
@@ -72,7 +73,6 @@ class NextGenSetup:
         groups: Any,
     ) -> None:
         # running nextgen simulation ro get lateral flows
-        rank = MPI.COMM_WORLD.rank
         if self.merge_catchment:
             gpkg_path = Path("/ngen/ngen/data/config/merged.gpkg")
         else:
@@ -102,9 +102,8 @@ class NextGenSetup:
                 subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
                 # subprocess.call(cmd, shell=True)
         except subprocess.CalledProcessError as e:
-            print(f"Rank {rank} failed to run ngen simulation.")
             restore_data_dir(data_dir=self.data_dir)
-            MPI.COMM_WORLD.Abort(rank)
+            destroy_all_processes(f"Failed to run ngen simulation.")
 
         if self.merge_catchment:
             # create symbolic link for actual lateral files to merged lateral files if merged catchment is true
@@ -135,15 +134,12 @@ class NextGenSetup:
                 subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
                 # subprocess.call(cmd, shell=True)
             except subprocess.CalledProcessError as e:
-                print(f"Rank {rank} failed to run troute simulation.")
                 restore_data_dir(data_dir=self.data_dir)
-                MPI.COMM_WORLD.Abort(rank)
+                destroy_all_processes(f"Failed to run troute simulation.")
             
             self.troute_output_path = temp_troute_output_dir / self.troute_output_path.name
             if not self.troute_output_path.exists():
-                print(f"Rank {rank} doesn't have troute output file. ####\n\n")
-                restore_data_dir(data_dir=self.data_dir)
-                MPI.COMM_WORLD.Abort(rank)
+                destroy_all_processes(f"Doesn't have troute output file. ####\n\n")
 
 
     def evaluate_streamflow(self, tmp_root: Path, feature_id: int) -> np.ndarray:
@@ -388,7 +384,8 @@ class SpotpySetup:
             sim = np.asarray(sim)
             eval = np.asarray(eval)
             if len(sim) != len(eval):
-                raise ValueError("simulation and observation are not equal length")
+                destroy_all_processes(f"Simulation and observation are not equal length")
+                return float("nan")
             if np.sum(eval) == 0:
                 # Since the value cannot be negative, this means all values here are 0.
                 eval = eval + np.float64(1e-10)
