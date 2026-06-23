@@ -25,8 +25,21 @@ def calibration(
         ),
     ],
 ) -> int:
+    #comm, rank, and size to handle multiprocess and race_condition
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
     config_values = load_calibration_config(config)
-    target_variables = parse_target_variables(config_values["target_variables"])
+    target_variables = None
+    comm.Barrier()
+    if rank == 0:
+        #parsing target variables support automatic downloading of streamflow data if it doesn't
+        #exist. So, only letting rank 0 download it
+        target_variables = parse_target_variables(config_values["target_variables"], config_values)
+    comm.barrier()
+    target_variables = comm.bcast(target_variables, root=0)
+
     gage_id = str(config_values["gage_id"])
     start_date = str(config_values["start_date"])
     end_date = str(config_values["end_date"])
@@ -66,24 +79,18 @@ def calibration(
     troute_output_path = data_dir / "outputs" / "troute" / get_troute_output_name(data_dir / "config" / "realization.json") 
     tensorboard_logdir = data_dir / "calibration" / "tensorboard_logs"
 
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
-
     #need to define this to broadcast to other ranks
     groups = None
     clone_root = None
 
     if execution_mode == "serial" and size > 1:
         if rank == 0:
-            raise ValueError(
-                "Warning: Running in serial mode but MPI detected multiple processes. For serial execution, run without mpirun.\n\n"
-            )
+            destroy_all_processes("Running in serial mode but MPI detected multiple processes. For serial execution, run without mpirun.\n\n")
 
     if execution_mode == "parallel" and size == 1:
         if rank == 0:
-            raise ValueError("Parallel mode requested, but only 1 MPI process detected.\n\n")
-
+            destroy_all_processes("Parallel mode requested, but only 1 MPI process detected.\n\n")
+            
     comm.Barrier()
     try:
         if rank == 0:
@@ -156,9 +163,9 @@ def calibration(
             restore_data_dir(clone_root)
 
     except Exception as e:
-        print(f"run_spotpy failed with error: {e} (Process rank {rank})\n\n")
         # restore_data_dir(clone_root)
         traceback.print_exc()
+        destroy_all_processes(f"run_spotpy failed with error: {e} (Process rank {rank})\n\n")
     return 0
 
 
