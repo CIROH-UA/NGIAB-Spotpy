@@ -37,7 +37,7 @@ class NextGenSetup:
         self.gage_id = gage_id
         self.training_start_date = pd.to_datetime(training_start_date)
         self.end_date = pd.to_datetime(end_date)
-        self.observed = pd.read_pickle(observed_flow_path)
+        self.observed = pd.read_csv(observed_flow_path)
         self.observed["Time"] = pd.to_datetime(self.observed["Time"]).dt.tz_localize(None)
         self.observed = self.observed[
             (self.observed["Time"] >= self.training_start_date)
@@ -120,22 +120,22 @@ class NextGenSetup:
             )
             subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
         except subprocess.CalledProcessError as e:
-            print(f"Rank {rank} failed to run troute simulation.")
             restore_data_dir(data_dir=self.data_dir)
-            MPI.COMM_WORLD.Abort(rank)
+            destroy_all_processes(f"Rank {rank} failed to run troute simulation.")
         
         self.troute_output_path = temp_troute_output_dir / self.troute_output_path.name
         if not self.troute_output_path.exists():
-            print(f"Rank {rank} doesn't have troute output file. ####\n\n")
             restore_data_dir(data_dir=self.data_dir)
-            MPI.COMM_WORLD.Abort(rank)
+            destroy_all_processes(f"Rank {rank} doesn't have troute output file. ####\n\n")
 
     def evaluate(self, tmp_root: Path, feature_id: int) -> np.ndarray:
         ds = xr.open_dataset(self.troute_output_path)
-        simulated = ds["flow"].sel(feature_id=feature_id).values
-        actual_start = min(self.training_start_date, self.observed.index[0])
-        simulated = simulated[ds["time"] >= actual_start]
-        simulated = simulated[: len(self.observed) - 1]
+        sim_df = pd.Series(
+            ds["flow"].sel(feature_id=feature_id).values,
+            index=pd.DatetimeIndex(ds["time"].values)
+        )
+        simulated = sim_df.reindex(self.observed.index).values
+        simulated = np.array(simulated)
         shutil.rmtree(tmp_root, ignore_errors=True)
         return simulated
 
@@ -237,7 +237,7 @@ class SpotpySetup:
         return self.model.evaluate(tmp_root, self.feature_id)
 
     def evaluation(self) -> np.ndarray:
-        return self.model.observed.values.squeeze()[1:]
+        return self.model.observed.values.squeeze()
 
     def objectivefunction(self, simulation: np.ndarray, evaluation: np.ndarray) -> float:
         if len(simulation) != len(evaluation):
@@ -471,4 +471,4 @@ def run_spotpy(
     print(f"\nTensorBoard logs saved to: {run_log_dir}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results\n\n")
 
-    return best_params
+    return best_params, best_params_index

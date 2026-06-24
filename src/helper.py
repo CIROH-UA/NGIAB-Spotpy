@@ -274,7 +274,7 @@ def merge_and_prepare_forcing(
         except Exception as e:
             print(f"Merging failed with error: {e}\n\n")
             print("The merge_area value might be too small. Bump that value up and try calibrating again.")
-            MPI.COMM_WORLD.Abort(0)
+            destroy_all_processes(f"Merging failed with error: {e}\n\nThe merge_area value might be too small. Bump that value up and try calibrating again.")
             
         backup(original_gpkg)
         # rename merged geopackage to original in the folder
@@ -311,11 +311,17 @@ def merge_and_prepare_forcing(
 
 def create_directories(data_dir: Path) -> Path:
     """Create necessary directories for Calibration before hand to avoid race conditions when multiple processes are trying to create the same directory at the same time."""
-    (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True, exist_ok=True)
-
     #just for sanity
     if (data_dir / "calibration" / "temp_runs").exists():
         shutil.rmtree(data_dir / "calibration" / "temp_runs")
+    
+    #delete this to avoid output clutter
+    if (data_dir / "calibration" / "tensorboard_logs").exists():
+        shutil.rmtree(data_dir / "calibration" / "tensorboard_logs")
+    if (data_dir / "calibration" / "spotpy").exists():
+        shutil.rmtree(data_dir / "calibration" / "spotpy")
+    
+    (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True)
 
     #create clone root diretory inside "Temp_Runs" to keep the main directory clean and untouched 
     clone_root = data_dir / "calibration" / "temp_runs" / f"{data_dir.name}"
@@ -477,7 +483,6 @@ def load_calibration_config(config_path: Path) -> dict[str, Any]:
         "end_date",
         "training_start_date",
         "data_root",
-        "target_variables",
     ]
     missing_fields = [
         field for field in required_fields if calibration_config.get(field) is None
@@ -501,6 +506,5 @@ def load_calibration_config(config_path: Path) -> dict[str, Any]:
     validate_config_choice(config_values, "objective_function")
     validate_config_choice(config_values, "execution_mode", uppercase=False)
     config_values["merge_catchment"] = str_to_bool(config_values["merge_catchment"])
-    config_values["norm"] = str_to_bool(config_values["norm"])
     return config_values
 

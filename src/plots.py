@@ -152,7 +152,7 @@ def plot_bestmodelrun(
     else:
         bestindex, bestobjf = get_minlikeindex(results, verbose=False)
 
-    best_simulation = list(results[simulation_fields][bestindex][0])
+    best_simulation = list(results[simulation_fields][bestindex])
 
     invert_objective = best_is_higher != algorithm_maximizes
     #reversing what is done in the objective_function of spotpy
