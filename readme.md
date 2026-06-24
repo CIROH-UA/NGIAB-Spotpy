@@ -42,13 +42,9 @@ This code:
 
 1. Clone the repository and enter it.
    ```bash
-   git clone https://github.com/slama0077/NGIAB-Spotpy_SL.git 
+   git clone https://github.com/CIROH-UA/NGIAB-Spotpy.git
    ```
-2. Checkout the branch.
-   ```bash
-   git checkout Multi_Objective
-   ```
-3. Install OpenMPI.
+2. Install OpenMPI.
    - macOS:
      ```bash
      brew install openmpi
@@ -57,11 +53,11 @@ This code:
      ```bash
      sudo apt install openmpi-bin
      ```
-4. Verify MPI:
+3. Verify MPI:
    ```bash
    mpirun --version
    ```
-5. Install C compiler, Fortran, Rust/Cargo, and the routing package:
+4. Install C compiler, Fortran, Rust/Cargo, and the routing package:
    - Linux (Debian/Ubuntu):
      ```bash
      sudo apt install build-essential gfortran
