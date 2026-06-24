@@ -11,6 +11,7 @@ from flush_output import suppress_spotpy_syntax_warnings
 suppress_spotpy_syntax_warnings()
 from spotpy.analyser import (
     get_maxlikeindex,
+    get_minlikeindex,
     get_parameternames,
     get_parameters,
     get_simulation_fields,
@@ -119,10 +120,11 @@ def plot_parameterInteraction(
 
 def plot_bestmodelrun(
     results: Any,
-    evaluation: np.ndarray,
+    optimizer: Any,
     objective_function: str,
-    invert_objective: bool,
-    fig_name: str = "Best_model_run.png",
+    algorithm_maximizes: bool,
+    best_is_higher:bool,
+    fig_name: str = "Best_Model_Run",
     output_folder: str | Path | None = None,
 ) -> None:
     """Plot best model run with seaborn styling"""
@@ -130,7 +132,7 @@ def plot_bestmodelrun(
     sns.set_style("darkgrid")
 
     fig, ax = plt.subplots(figsize=(16, 9))
-
+    evaluation = optimizer.evaluation()
     # Clean evaluation data
     evaluation = np.array(evaluation, dtype=float)
     evaluation[evaluation == -9999] = np.nan
@@ -143,9 +145,16 @@ def plot_bestmodelrun(
 
     # Get best simulation
     simulation_fields = get_simulation_fields(results)
-    bestindex, bestobjf = get_maxlikeindex(results, verbose=False)
-    best_simulation = list(results[simulation_fields][bestindex][0])
 
+    if algorithm_maximizes:
+        bestindex, bestobjf = get_maxlikeindex(results, verbose=False)
+        bestindex = bestindex[0][0]
+    else:
+        bestindex, bestobjf = get_minlikeindex(results, verbose=False)
+
+    best_simulation = list(results[simulation_fields][bestindex])
+
+    invert_objective = best_is_higher != algorithm_maximizes
     #reversing what is done in the objective_function of spotpy
     if invert_objective:
         if objective_function == "KGE":

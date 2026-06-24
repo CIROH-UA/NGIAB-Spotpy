@@ -112,16 +112,16 @@ def log_parameters_from_spotpy_csv(
 
 def plot_results(
     results: Any,
-    observation_data: Any,
+    optimizer: Any,
     output_dir: str | Path,
     objective_function: str,
-    invert_objective: bool,
+    algorithm_maximizes: bool,
+    best_is_higher: bool,
 ) -> None:
     plot_parametertrace(results=results, output_folder=output_dir)
     plot_parameterInteraction(results=results, output_folder=output_dir)
-    plot_bestmodelrun(results=results, evaluation=observation_data, objective_function=objective_function, invert_objective=invert_objective, output_folder=output_dir)
+    plot_bestmodelrun(results=results, optimizer=optimizer, objective_function=objective_function, algorithm_maximizes=algorithm_maximizes, best_is_higher=best_is_higher,output_folder=output_dir)
     plot_parameter_correlation(results=results, output_folder=output_dir)
-
 
 def _update_parameters(file_path: Path, param_updates: dict[str, Any], model_type_name: str) -> None:
     with open(file_path, "r") as f:
@@ -274,7 +274,7 @@ def merge_and_prepare_forcing(
         except Exception as e:
             print(f"Merging failed with error: {e}\n\n")
             print("The merge_area value might be too small. Bump that value up and try calibrating again.")
-            MPI.COMM_WORLD.Abort(0)
+            destroy_all_processes(f"Merging failed with error: {e}\n\nThe merge_area value might be too small. Bump that value up and try calibrating again.")
             
         backup(original_gpkg)
         # rename merged geopackage to original in the folder
@@ -311,11 +311,17 @@ def merge_and_prepare_forcing(
 
 def create_directories(data_dir: Path) -> Path:
     """Create necessary directories for Calibration before hand to avoid race conditions when multiple processes are trying to create the same directory at the same time."""
-    (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True, exist_ok=True)
-
     #just for sanity
     if (data_dir / "calibration" / "temp_runs").exists():
         shutil.rmtree(data_dir / "calibration" / "temp_runs")
+    
+    #delete this to avoid output clutter
+    if (data_dir / "calibration" / "tensorboard_logs").exists():
+        shutil.rmtree(data_dir / "calibration" / "tensorboard_logs")
+    if (data_dir / "calibration" / "spotpy").exists():
+        shutil.rmtree(data_dir / "calibration" / "spotpy")
+    
+    (data_dir / "calibration" / "spotpy" / "plots").mkdir(parents=True)
 
     #create clone root diretory inside "Temp_Runs" to keep the main directory clean and untouched 
     clone_root = data_dir / "calibration" / "temp_runs" / f"{data_dir.name}"
@@ -399,10 +405,106 @@ def process_usgs_streamflow(
             print(f"Attempt {attempt}/10: Failed to retrieve data — {e}. Retrying in 2 seconds...")
             time.sleep(2)
     else:
-        print("Failed to retrieve data after 10 attempts. No data may be available for this gage/period.")
-        MPI.COMM_WORLD.Abort(0)
+        destroy_all_processes("Failed to retrieve data after 10 attempts. No data may be available for this gage/period.")
 
     if output_path:
-        dfo_usgs_hr.to_pickle(Path(output_path))
+        dfo_usgs_hr.to_csv(Path(output_path), index=False)
 
     return dfo_usgs_hr
+
+
+def destroy_all_processes(message: str) -> None:
+    rank = MPI.COMM_WORLD.rank
+    for i in range(3):
+        print("\n\n***ERROR ERROR ERROR***\n")
+        print(f"Reported by process number: {rank}")
+        print(f"Message: {message} \n\n\n")
+    MPI.COMM_WORLD.Abort(rank)
+
+
+def str_to_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    value = str(value)
+    if value.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    if value.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    destroy_all_processes("Boolean value expected.")
+    return False
+
+
+def validate_config_choice(
+    config: dict[str, Any],
+    field: str,
+    uppercase: bool = True,
+) -> None:
+    
+    if field == "algorithm":
+        supported_values = ("SCE", "DDS")
+    elif field == "objective_function":
+        supported_values = ("KGE", "RMSE")
+    else:
+        supported_values = ("serial", "parallel")
+
+    raw_value = config.get(field)
+    value = str(raw_value).strip()
+    value = value.upper() if uppercase else value.lower()
+
+    if value not in supported_values:
+        allowed = ", ".join(supported_values)
+        destroy_all_processes(
+            f"Invalid config value for '{field}': {raw_value!r}. "
+            f"Supported values are: {allowed}."
+        )
+        return
+
+    config[field] = value
+    
+
+def load_calibration_config(config_path: Path) -> dict[str, Any]:
+    config_path = config_path.expanduser()
+    if not config_path.exists():
+        destroy_all_processes(f"Config file does not exist: {config_path}")
+
+    with config_path.open("r") as file:
+        config = yaml.safe_load(file) or {}
+
+    if not isinstance(config, dict):
+        destroy_all_processes("Config file must contain a YAML mapping.")
+
+    calibration_config = config.get("calibration", config)
+    if not isinstance(calibration_config, dict):
+        destroy_all_processes("The 'calibration' section must be a YAML mapping.")
+
+    required_fields = [
+        "gage_id",
+        "start_date",
+        "end_date",
+        "training_start_date",
+        "data_root",
+    ]
+    missing_fields = [
+        field for field in required_fields if calibration_config.get(field) is None
+    ]
+    if missing_fields:
+        missing = ", ".join(missing_fields)
+        destroy_all_processes(f"Missing required config field(s): {missing}")
+
+    defaults = {
+        "algorithm": "DDS",
+        "objective_function": "KGE",
+        "repetitions": 100,
+        "dds_trials": 1,
+        "execution_mode": "parallel",
+        "merge_catchment": True,
+        "merge_area": 200,
+    }
+    config_values = {**defaults, **calibration_config}
+
+    validate_config_choice(config_values, "algorithm")
+    validate_config_choice(config_values, "objective_function")
+    validate_config_choice(config_values, "execution_mode", uppercase=False)
+    config_values["merge_catchment"] = str_to_bool(config_values["merge_catchment"])
+    return config_values
+
