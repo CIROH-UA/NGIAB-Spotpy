@@ -147,8 +147,6 @@ algorithm: "DDS"
 objective_function: "KGE"
 repetitions: 100
 dds_trials: 1
-n_pop: 10
-norm: false
 execution_mode: "serial"
 merge_catchment: False
 ```
