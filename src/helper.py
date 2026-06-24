@@ -112,16 +112,16 @@ def log_parameters_from_spotpy_csv(
 
 def plot_results(
     results: Any,
-    observation_data: Any,
+    optimizer: Any,
     output_dir: str | Path,
     objective_function: str,
-    invert_objective: bool,
+    algorithm_maximizes: bool,
+    best_is_higher: bool,
 ) -> None:
     plot_parametertrace(results=results, output_folder=output_dir)
     plot_parameterInteraction(results=results, output_folder=output_dir)
-    plot_bestmodelrun(results=results, evaluation=observation_data, objective_function=objective_function, invert_objective=invert_objective, output_folder=output_dir)
+    plot_bestmodelrun(results=results, optimizer=optimizer, objective_function=objective_function, algorithm_maximizes=algorithm_maximizes, best_is_higher=best_is_higher,output_folder=output_dir)
     plot_parameter_correlation(results=results, output_folder=output_dir)
-
 
 def _update_parameters(file_path: Path, param_updates: dict[str, Any], model_type_name: str) -> None:
     with open(file_path, "r") as f:
@@ -399,11 +399,10 @@ def process_usgs_streamflow(
             print(f"Attempt {attempt}/10: Failed to retrieve data — {e}. Retrying in 2 seconds...")
             time.sleep(2)
     else:
-        print("Failed to retrieve data after 10 attempts. No data may be available for this gage/period.")
-        MPI.COMM_WORLD.Abort(0)
+        destroy_all_processes("Failed to retrieve data after 10 attempts. No data may be available for this gage/period.")
 
     if output_path:
-        dfo_usgs_hr.to_pickle(Path(output_path))
+        dfo_usgs_hr.to_csv(Path(output_path), index=False)
 
     return dfo_usgs_hr
 

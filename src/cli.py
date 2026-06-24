@@ -79,6 +79,18 @@ def calibration(
     if execution_mode == "parallel" and size == 1:
         if rank == 0:
             destroy_all_processes("Parallel mode requested, but only 1 MPI process detected.\n\n")
+
+    if rank == 0:
+        if not observed_flow_path.exists():
+            print(f"\n\nRetrieving observed streamflow for gage {gage_id}...\n\n")
+            process_usgs_streamflow(
+                gage_id,
+                start_date,
+                end_date,
+                output_path=observed_flow_path,
+            )
+        else:
+            print(f"\n\nUsing existing observed flow data: {observed_flow_path}\n\n")
             
     comm.Barrier()
     try:
@@ -108,7 +120,7 @@ def calibration(
             start_date,
             end_date,
             training_start_date,
-            target_variables,
+            observed_flow_path,
             troute_output_path,
             clone_root ,
             feature_id,

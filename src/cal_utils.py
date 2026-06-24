@@ -369,21 +369,11 @@ def run_spotpy(
         best_is_higher = True
         obj_func = spotpy.objectivefunctions.kge
 
-    # if objective_function == "KGE":
-    #     best_is_higher = True
-    #     obj_func = spotpy.objectivefunctions.kge
-    # elif objective_function == "RMSE":
-    #     best_is_higher = False
-    #     obj_func = spotpy.objectivefunctions.rmse
 
     if algorithm == "SCE":
         algorithm_maximizes = False
     else:
         algorithm_maximizes = True
-    # if algorithm == "DDS":
-    #     algorithm_maximizes = True
-    # elif algorithm == "SCE":
-    #     algorithm_maximizes = False
 
     invert_objective = best_is_higher != algorithm_maximizes
 
@@ -459,6 +449,12 @@ def run_spotpy(
 
     best_params_value = best_params[0]
 
+    if algorithm_maximizes:
+        best_params_index, _ = spotpy.analyser.get_maxlikeindex(results, verbose=False)
+        best_params_index = best_params_index[0][0]
+    else:
+        best_params_index, _ = spotpy.analyser.get_minlikeindex(results, verbose=False)
+
     #redefine realization path to the main data directory
     realization_path = calibration_dir.parent / "config" / "realization.json"
     write_config(realization_path, best_params_value, param_to_model)
@@ -470,7 +466,7 @@ def run_spotpy(
         writer.close()
 
     # # Generate standard plots
-    plot_results(results, optimizer.evaluation(), calibration_dir / "spotpy" / "plots", objective_function, invert_objective)
+    plot_results(results, optimizer, calibration_dir / "spotpy" / "plots", objective_function, algorithm_maximizes, best_is_higher)
 
     print(f"\nTensorBoard logs saved to: {run_log_dir}")
     print(f"Run 'tensorboard --logdir={tensorboard_logdir}' to view results\n\n")
