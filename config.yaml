@@ -1,0 +1,11 @@
+gage_id: "10163000"
+start_date: "2015-06-05"
+end_date: "2015-08-05"
+training_start_date: "2015-07-05"
+data_root: ~/ngiab_preprocess_output
+algorithm: "SCE" #Available [DDS, SCE]
+objective_function: "KGE" #Available [KGE, RMSE]
+repetitions: 10
+dds_trials: 1  #used for DDS, if other algorithm is used. otherwise, will be ignored.
+execution_mode: "parallel"
+merge_catchment: False
