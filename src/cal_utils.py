@@ -72,74 +72,105 @@ class NextGenSetup:
         temp_troute_output_dir: Path,
         groups: Any,
     ) -> None:
-        # running nextgen simulation ro get lateral flows
+        #running nextgen simulation ro get lateral flows
         if self.merge_catchment:
             gpkg_path = Path("/ngen/ngen/data/config/merged.gpkg")
         else:
             gpkg_path = Path("/ngen/ngen/data/config") / f"{self.data_dir.name}_subset.gpkg"
-        try:
-            if self.execution_mode == "serial":
-                # important note: number of cores exposed should be less than or equal to number of partitions.
-                partition_file = next(self.data_dir.glob("*.json")).name
-                cpu_count = partition_file.split(".")[0].split("_")[-1]
-                cmd_base = f"docker run --rm --entrypoint mpirun -w /ngen/ngen/data -v {tmp_root}:/ngen/ngen/data awiciroh/ciroh-ngen-image -n {cpu_count} /dmod/bin/ngen-parallel"
-                ngen_cmd = (
-                    f" {gpkg_path} all {gpkg_path} all "
-                    f"/ngen/ngen/data/config/{realization.name} /ngen/ngen/data/{partition_file} "
-                )
-                cmd = cmd_base + ngen_cmd
-                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-                # subprocess.call(cmd, shell=True)
 
-            else:
-                cmd_base = f"docker run --rm --entrypoint /dmod/bin/ngen-serial -w /ngen/ngen/data -v {tmp_root}:/ngen/ngen/data awiciroh/ciroh-ngen-image"
-                ngen_cmd = (
-                    f" {gpkg_path} all {gpkg_path} all /ngen/ngen/data/config/{realization.name}"
-                )
-                cmd = cmd_base + ngen_cmd
-                # cmd = f"bmi-driver {self.data_dir} -j 1 --hf {self.data_dir / 'config' / gpkg_path.name} --config {self.data_dir / 'config' / realization.name}"
+        for failure_counter in range(10):
+            try:
+                if self.execution_mode == "serial":
+                    partition_file = next(self.data_dir.glob("*.json")).name
+                    cpu_count = partition_file.split(".")[0].split("_")[-1]
 
-                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-                # subprocess.call(cmd, shell=True)
-        except subprocess.CalledProcessError as e:
-            restore_data_dir(data_dir=self.data_dir)
-            destroy_all_processes(f"Failed to run ngen simulation.")
-
-        if self.merge_catchment:
-            # create symbolic link for actual lateral files to merged lateral files if merged catchment is true
-            # create a merged directory inside temp_ngen_output_dir
-            merged_lateral_dir = temp_ngen_output_dir / "merged"
-            merged_lateral_dir.mkdir(exist_ok=True)
-            # mv lat files from temp_ngen_directory to merged directory
-            os.system(f"mv {temp_ngen_output_dir}/cat-*.csv {merged_lateral_dir}/")
-
-            # groups[i] maps to merged/cat-i.csv by construction.
-            for i, cat_ids in enumerate(groups):
-                merged_file_name = f"cat-{i}.csv"
-                for cat_id in cat_ids:
-                    os.symlink(
-                        temp_ngen_output_dir / "merged" / merged_file_name,
-                        temp_ngen_output_dir / f"cat-{cat_id}.csv",
+                    cmd_base = (
+                        f"docker run --rm --entrypoint mpirun "
+                        f"-w /ngen/ngen/data "
+                        f"-v {tmp_root}:/ngen/ngen/data "
+                        f"awiciroh/ciroh-ngen-image -n {cpu_count} "
+                        f"/dmod/bin/ngen-parallel"
                     )
 
-        if "streamflow" in self.target_variables:
-            #running troute simulation to get streamflow
-            # print("Routing Streamflow")
-            try:
-                subset_gpkg = tmp_root / "config" / f"{self.data_dir.name}_subset.gpkg"
-                cmd = (
-                    f"rs-route {self.data_dir} --hf {subset_gpkg} -k route-rs "
-                    f"-i {temp_ngen_output_dir} -o {temp_troute_output_dir}"
-                )
+                    ngen_cmd = (
+                        f" {gpkg_path} all {gpkg_path} all "
+                        f"/ngen/ngen/data/config/{realization.name} "
+                        f"/ngen/ngen/data/{partition_file} "
+                    )
+
+                else:
+                    cmd_base = (
+                        f"docker run --rm --entrypoint /dmod/bin/ngen-serial "
+                        f"-w /ngen/ngen/data "
+                        f"-v {tmp_root}:/ngen/ngen/data "
+                        f"awiciroh/ciroh-ngen-image"
+                    )
+
+                    ngen_cmd = (
+                        f" {gpkg_path} all {gpkg_path} all "
+                        f"/ngen/ngen/data/config/{realization.name}"
+                    )
+
+                cmd = cmd_base + ngen_cmd
                 subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
                 # subprocess.call(cmd, shell=True)
-            except subprocess.CalledProcessError as e:
-                restore_data_dir(data_dir=self.data_dir)
-                destroy_all_processes(f"Failed to run troute simulation.")
-            
-            self.troute_output_path = temp_troute_output_dir / self.troute_output_path.name
-            if not self.troute_output_path.exists():
-                destroy_all_processes(f"Doesn't have troute output file. ####\n\n")
+
+            except subprocess.CalledProcessError:
+                if failure_counter < 9:
+                    print(f"Failed ngen simulation: {failure_counter+1}/10. Rerunning again\n")
+                    continue
+                else:
+                    restore_data_dir(data_dir=self.data_dir)
+                    destroy_all_processes(f"Failed to run ngen simulation.")
+
+            if self.merge_catchment:
+                merged_lateral_dir = temp_ngen_output_dir / "merged"
+                merged_lateral_dir.mkdir(exist_ok=True)
+
+                os.system(f"mv {temp_ngen_output_dir}/cat-*.csv {merged_lateral_dir}/")
+
+                for group_idx, cat_ids in enumerate(groups):
+                    merged_file_name = f"cat-{group_idx}.csv"
+
+                    for cat_id in cat_ids:
+                        os.symlink(
+                            temp_ngen_output_dir / "merged" / merged_file_name,
+                            temp_ngen_output_dir / f"cat-{cat_id}.csv",
+                        )
+
+            if "streamflow" in self.target_variables:
+                try:
+                    subset_gpkg = tmp_root / "config" / f"{self.data_dir.name}_subset.gpkg"
+
+                    cmd = (
+                        f"rs-route {self.data_dir} --hf {subset_gpkg} -k route-rs "
+                        f"-i {temp_ngen_output_dir} "
+                        f"-o {temp_troute_output_dir}"
+                    )
+
+                    # subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+                    subprocess.call(cmd, shell=True)
+
+                except subprocess.CalledProcessError:
+                    if failure_counter < 9:
+                        print(f"Failed routing simulation: {failure_counter+1}/10. Rerunning again\n")
+                        continue
+                    else:
+                        restore_data_dir(data_dir=self.data_dir)
+                        destroy_all_processes(f"Failed to run troute simulation.")
+
+                self.troute_output_path = temp_troute_output_dir / self.troute_output_path.name
+
+                if not self.troute_output_path.exists():
+                    if failure_counter < 9:
+                        print(f"Failed routing simulation: {failure_counter+1}/10. Rerunning again\n")
+                        continue
+                    else:
+                        restore_data_dir(data_dir=self.data_dir)
+                        destroy_all_processes(f"Doesn't have troute output file. ####\n\n")
+                        
+            break
+
 
 
     def evaluate_streamflow(self, tmp_root: Path, feature_id: int) -> np.ndarray:
