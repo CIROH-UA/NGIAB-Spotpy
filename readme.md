@@ -185,21 +185,6 @@ Then run with MPI:
 mpirun -n 11 --oversubscribe python -m calibration --config config.yaml
 ```
 
-
-## Configuration
-
-The command line only selects the YAML file:
-
-```bash
-calibration --config config.yaml
-```
-
-or:
-
-```bash
-calibration -c config.yaml
-```
-
 ### Required Config Fields
 
 | Field | Type | Description | Example |
