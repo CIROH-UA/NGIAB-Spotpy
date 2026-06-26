@@ -113,7 +113,6 @@ class NextGenSetup:
 
                 cmd = cmd_base + ngen_cmd
                 subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-                # subprocess.call(cmd, shell=True)
 
             except subprocess.CalledProcessError:
                 if failure_counter < 9:
@@ -148,8 +147,7 @@ class NextGenSetup:
                         f"-o {temp_troute_output_dir}"
                     )
 
-                    # subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-                    subprocess.call(cmd, shell=True)
+                    subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
 
                 except subprocess.CalledProcessError:
                     if failure_counter < 9:
@@ -248,17 +246,14 @@ class NextGenSetup:
             "Time": weighted_mean.index,
             "values": weighted_mean.values
         })
-        if column == "ACTUAL_ET":
-            # actual_start = min(self.training_start_date, self.observed_ET.index[0])
-            simulated = result[(result["Time"] >= self.training_start_date) & (result["Time"] <= self.end_date)]
-            #convert from m to mm
-            simulated = np.array(simulated["values"]) * 1000
-        else:
-            # actual_start = min(self.training_start_date, self.observed_SWE.index[0])
-            simulated = result[(result["Time"] >= self.training_start_date) & (result["Time"] <= self.end_date)]
-            simulated = np.array(simulated["values"])
-        return simulated
+        result = result.set_index("Time")
 
+        if column == "ACTUAL_ET":
+            simulated = result.reindex(self.observed_ET.index)["values"].to_numpy() * 1000
+        else:
+            simulated = result.reindex(self.observed_SWE.index)["values"].to_numpy()
+
+        return simulated
     def evaluate(self, tmp_root: Path, feature_id: int) -> list[np.ndarray]:
         simulated_list = []
         for var_name in self.target_variables:
