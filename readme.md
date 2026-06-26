@@ -226,15 +226,15 @@ For `streamflow`, calibration is hourly. If the file at `observed_data_path` doe
 
 For `ET` and `SWE`, calibration is daily. The code does not automatically download ET or SWE observations because those datasets are not straightforward to retrieve in a general way; their `observed_data_path` files must already exist.
 
-Observed data CSV files should include an index column plus `Time` and `values` columns:
+Observed data CSV files should include only `Time` and `values` columns:
 
 ```csv
-,Time,values
-0,2015-06-04 04:00:00+00:00,0.8155244133462836
-1,2015-06-04 05:00:00+00:00,0.8070293673739264
-2,2015-06-04 06:00:00+00:00,0.7985343214015692
-3,2015-06-04 07:00:00+00:00,0.7985343214015692
-4,2015-06-04 08:00:00+00:00,0.7942867984153907
+Time,values
+2015-06-05 04:00:00+00:00,0.8155244133462836
+2015-06-05 05:00:00+00:00,0.8070293673739264
+2015-06-05 06:00:00+00:00,0.7985343214015692
+2015-06-05 07:00:00+00:00,0.7985343214015692
+2015-06-05 08:00:00+00:00,0.7942867984153907
 ```
 
 ### Optional Config Fields
