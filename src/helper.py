@@ -437,7 +437,7 @@ def process_usgs_streamflow(
         MPI.COMM_WORLD.Abort(0)
 
     if output_path:
-        dfo_usgs_hr.to_csv(Path(output_path))
+        dfo_usgs_hr.to_csv(Path(output_path), index=False)
 
     return dfo_usgs_hr
 

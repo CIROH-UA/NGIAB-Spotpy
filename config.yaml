@@ -1,4 +1,4 @@
-gage_id: "01591400"
+gage_id: "10163000"
 start_date: "2015-06-05"
 end_date: "2015-08-05"
 training_start_date: "2015-07-05"
@@ -6,11 +6,11 @@ data_root: ~/ngiab_preprocess_output
 norm: True
 target_variables:
   streamflow:
-    observed_data_path: "~/ngiab_preprocess_output/01591400_observed_flow_2015-06-15_2015-08-15.csv"
-    weights: 0.7
-  ET:
-    observed_data_path: "daily/et_daily_mean_2016_2023.csv"
-    weights: 0.3
+    observed_data_path: "~/ngiab_preprocess_output/10163000_observed_flow_2015-06-05_2015-08-05.csv"
+    weights: 1.0
+  # ET:
+  #   observed_data_path: "daily/et_daily_mean_2016_2023.csv"
+  #   weights: 0.3
 
 
 algorithm: "DDS" #Available [DDS, NSGAII, SCE-UA]
