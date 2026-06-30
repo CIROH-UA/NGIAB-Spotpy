@@ -73,35 +73,32 @@ class NextGenSetup:
                     partition_file = next(self.data_dir.glob("*.json")).name
                     cpu_count = partition_file.split(".")[0].split("_")[-1]
 
-                    cmd_base = (
-                        f"docker run --rm --entrypoint mpirun "
-                        f"-w /ngen/ngen/data "
-                        f"-v {tmp_root}:/ngen/ngen/data "
-                        f"awiciroh/ciroh-ngen-image -n {cpu_count} "
-                        f"/dmod/bin/ngen-parallel"
-                    )
 
-                    ngen_cmd = (
-                        f" {gpkg_path} all {gpkg_path} all "
+                    hpc_command = (
+                        f"apptainer exec "
+                        f"--cleanenv "
+                        f"--bind {tmp_root}:/ngen/ngen/data "
+                        f"--pwd /ngen/ngen/data "
+                        f"ngiab_owp_openmpihpc.sif "
+                        f"mpirun -n {cpu_count} --oversubscribe /dmod/bin/ngen-parallel "
+                        f"{gpkg_path} all {gpkg_path} all "
                         f"/ngen/ngen/data/config/{realization.name} "
-                        f"/ngen/ngen/data/{partition_file} "
+                        f"/ngen/ngen/data/{partition_file}"
                     )
 
                 else:
-                    cmd_base = (
-                        f"docker run --rm --entrypoint /dmod/bin/ngen-serial "
-                        f"-w /ngen/ngen/data "
-                        f"-v {tmp_root}:/ngen/ngen/data "
-                        f"awiciroh/ciroh-ngen-image"
-                    )
-
-                    ngen_cmd = (
-                        f" {gpkg_path} all {gpkg_path} all "
+                    hpc_command = (
+                        f"apptainer exec "
+                        f"--cleanenv "
+                        f"--bind {tmp_root}:/ngen/ngen/data "
+                        f"--pwd /ngen/ngen/data "
+                        f"ngiab_owp_openmpihpc.sif "
+                        f"/dmod/bin/ngen-serial "
+                        f"{gpkg_path} all {gpkg_path} all "
                         f"/ngen/ngen/data/config/{realization.name}"
                     )
-
-                cmd = cmd_base + ngen_cmd
-                subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+                
+                subprocess.run(hpc_command, shell=True, check=True, capture_output=True, text=True)
 
             except subprocess.CalledProcessError:
                 if failure_counter < 9:
@@ -249,22 +246,31 @@ class SpotpySetup:
 
     def simulation(self, vector: Sequence[float]) -> np.ndarray:
         self.current_params = vector
+        tmp_root = None
 
-        tmp_root = self._create_process_temp_dir()
-        realization_path   = tmp_root / "config" / "realization.json"
-        troute_config_path = tmp_root / "config" / "troute.yaml"
-        ngen_output_dir    = tmp_root / "outputs" / "ngen"
-        troute_output_dir  = tmp_root / "outputs" / "troute"
-        write_config(realization_path, vector, self.model.param_to_model)
-        self.model.run_model(
-            tmp_root,
-            realization_path,
-            troute_config_path,
-            ngen_output_dir,
-            troute_output_dir,
-            self.model.groups,
-        )
-        return self.model.evaluate(tmp_root, self.feature_id)
+        try:
+            tmp_root = self._create_process_temp_dir()
+            realization_path   = tmp_root / "config" / "realization.json"
+            troute_config_path = tmp_root / "config" / "troute.yaml"
+            ngen_output_dir    = tmp_root / "outputs" / "ngen"
+            troute_output_dir  = tmp_root / "outputs" / "troute"
+            write_config(realization_path, vector, self.model.param_to_model)
+            self.model.run_model(
+                tmp_root,
+                realization_path,
+                troute_config_path,
+                ngen_output_dir,
+                troute_output_dir,
+                self.model.groups,
+            )
+            return self.model.evaluate(tmp_root, self.feature_id)
+        except Exception as exc:
+            if tmp_root is not None:
+                shutil.rmtree(tmp_root, ignore_errors=True)
+            destroy_all_processes(
+                f"Simulation failed on MPI rank {MPI.COMM_WORLD.rank}: {exc}"
+            )
+            raise
 
     def evaluation(self) -> np.ndarray:
         return self.model.observed.values.squeeze()

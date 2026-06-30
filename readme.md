@@ -1,6 +1,8 @@
-# NextGen Hydrologic Model Calibration
+# HPC Implementation of the NextGen Calibration Tool
 
-This project calibrates NextGen model parameters with SPOTPY and supports both serial and MPI-parallel execution.
+This branch documents the HPC implementation of the NextGen hydrologic model calibration workflow. It calibrates NextGen model parameters with SPOTPY, uses MPI for parallel calibration, and runs NextGen model simulations through Apptainer.
+
+Most calibration concepts are the same as the local workflow, but this branch assumes an HPC module environment, an Apptainer `.sif` image in the repository root, and `--oversubscribe` for every parallel calibration run.
 
 ## Table of Contents
 
@@ -32,65 +34,84 @@ This code:
 
 ## Prerequisites
 
-- Python 3.8+
-- OpenMPI or MPICH
-- Rust + Cargo (used to install routing dependency)
-- Docker (used by model execution)
+- HPC environment with module support
+- Python
+- OpenMPI
+- Rust + Cargo
+- Apptainer
+- netCDF, HDF5, and SQLite
+- `squashfuse` and `gocryptfs` for Apptainer/FUSE support
 - Basic familiarity with `ngiab_data_preprocess`
 
 ## Installation
 
-1. Clone the repository and enter it.
+1. Load the required HPC modules.
+
    ```bash
-   git clone https://github.com/CIROH-UA/NGIAB-Spotpy.git
+   module load Python
+   module load OpenMPI
+   module load Rust
+   module load rustup
+   module load cargo-c
+   module load Apptainer
+   module load git
+   module load netCDF
+   module load HDF5
+   module load SQLite
+   module load squashfuse
+   module load gocryptfs
    ```
-2. Install OpenMPI.
-   - macOS:
-     ```bash
-     brew install openmpi
-     ```
-   - Linux:
-     ```bash
-     sudo apt install openmpi-bin
-     ```
+
+   If your HPC site uses versioned module names, use the matching local versions. The important pieces are Python, OpenMPI, Rust/Cargo, Apptainer, netCDF, HDF5, SQLite, and the FUSE support modules needed by Apptainer.
+
+2. Clone the repository and enter it.
+
+   ```bash
+   git clone https://github.com/CIROH-UA/NGIAB-Spotpy.git NGIAB-Spotpy_SL
+   cd NGIAB-Spotpy_SL
+   ```
+
+   The Apptainer image must be created from inside the repository root. The current source code invokes `ngiab_owp_openmpihpc.sif` as a relative path, so calibration commands should also be launched from the repository root.
+
+   ```bash
+   apptainer pull docker://sifanak/ngiab:owp_openmpihpc
+   ```
+
+   This should create `ngiab_owp_openmpihpc.sif` in the repository root.
+
+   Do not pull the image from another directory. The code expects the image at this relative path from the repository root:
+
+   ```text
+   ./ngiab_owp_openmpihpc.sif
+   ```
+
+   Because the source code uses this relative path, run calibration from the repository root. The image belongs at the top level of the cloned repository, not inside `src/`.
+
 3. Verify MPI:
+
    ```bash
    mpirun --version
    ```
-4. Install C compiler, Fortran, Rust/Cargo, and the routing package:
-   - Linux (Debian/Ubuntu):
-     ```bash
-     sudo apt install build-essential gfortran
-     sudo apt install -y libhdf5-dev libnetcdf-dev libsqlite3-dev
-     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-     source ~/.cargo/env
-     rustup update stable
-     cargo --version
-     cargo install --git https://github.com/CIROH-UA/rs_route.git
-     ```
-   - macOS (Unix):
-     ```bash
-     xcode-select --install
-     brew install gcc hdf5@1.10 netcdf sqlite
-     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-     source ~/.cargo/env
-     rustup update stable
-     cargo --version
-     export HDF5_DIR="$(brew --prefix hdf5@1.10)"
-     export RUSTFLAGS="-C link-args=-Wl,-rpath,$HDF5_DIR/lib"
-     export DYLD_FALLBACK_LIBRARY_PATH="$HDF5_DIR/lib"
-     cargo install --git https://github.com/CIROH-UA/rs_route.git
-     ```
-5. Create and activate a virtual environment:
+
+4. Create and activate a virtual environment:
+
    ```bash
-   cd NGIAB-Spotpy_SL
-   python -m venv .venv
-   source .venv/bin/activate
+   python -m venv venv
+   source venv/bin/activate
    ```
-6. Install Python dependencies from `pyproject.toml`:
+5. Install Python dependencies from `pyproject.toml`:
+
    ```bash
    pip install -e .
    ```
+
+6. Use `--oversubscribe` for every parallel calibration run.
+
+   ```bash
+   mpirun -n 11 --oversubscribe venv/bin/python -m calibration -c config.yaml
+   ```
+
+   SPOTPY uses rank 0 as the coordinator and the remaining ranks as workers. For example, `-n 11` gives 1 coordinator and 10 worker simulations.
 
 ## Expected Data Layout
 
@@ -165,7 +186,7 @@ merge_catchment: true
 Then run with MPI:
 
 ```bash
-mpirun -n 11 --oversubscribe python -m calibration --config config.yaml
+mpirun -n 11 --oversubscribe venv/bin/python -m calibration --config config.yaml
 ```
 
 ### Required Config Fields
@@ -177,27 +198,15 @@ mpirun -n 11 --oversubscribe python -m calibration --config config.yaml
 | `end_date` | string | Full simulation end date (`YYYY-MM-DD`) | `2015-08-15` |
 | `training_start_date` | string | Start of the calibration/evaluation window inside the simulation period | `2015-07-15` |
 | `data_root` | string | Parent folder containing `gage-{gage_id}` | `/home/user/data` |
-| `target_variables` | mapping | Observed data files and optional weights for each calibration target | see below |
-
-### `target_variables`
-
-```yaml
-target_variables:
-  streamflow:
-    observed_data_path: "/path/to/observed_streamflow.csv"
-    weight: 1.0
-```
 
 ### Optional Config Fields
 
 | Field | Type | Default | Options | Description |
 | --- | --- | --- | --- | --- |
-| `algorithm` | string | `DDS` | `SCE`, `DDS`, `NSGAII`| Search algorithm used by SPOTPY |
+| `algorithm` | string | `DDS` | `SCE`, `DDS` | Search algorithm used by SPOTPY |
 | `objective_function` | string | `KGE` | `KGE`, `RMSE` | Metric used to score each parameter set |
 | `repetitions` | integer | `100` | positive integer | Number of optimization iterations |
 | `dds_trials` | integer | `1` | positive integer | DDS restart trials (used only when `algorithm: "DDS"`) |
-| `n_pop` | integer | `10` | positive integer | Population size for NSGAII (will be ignored when other algorithm is used)| 
-| `norm` | bool-like value | `false` | `true/false`, `yes/no`, `1/0` | Combine multiple target-variable scores using a normalized distance-style objective instead of the weighted sum |
 | `execution_mode` | string | `parallel` | `serial`, `parallel` | Controls MPI behavior |
 | `merge_catchment` | bool-like value | `true` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
 | `merge_area` | float | `200` | positive float | Catchment area threshold in square km used to merge divides |
@@ -228,6 +237,7 @@ python -m calibration --help
 - Runs with MPI workers for faster calibration.
 - Rank 0 is coordinator; worker ranks execute simulations.
 - Set `execution_mode: "parallel"` in `config.yaml`.
+- Always include `--oversubscribe` in the `mpirun` command on this HPC branch.
 - If you need `N` worker simulations, use `mpirun -n N+1`.
   - Example: 10 workers -> `mpirun -n 11`.
 
@@ -288,17 +298,21 @@ Useful dashboards:
 Use `--oversubscribe` with `mpirun`:
 
 ```bash
-mpirun -n 20 --oversubscribe calibration --config config.yaml
+mpirun -n 20 --oversubscribe venv/bin/python -m calibration --config config.yaml
 ```
 
 ### Issue: Process hangs or does not complete
 
-1. Check Docker with:
+1. Confirm the Apptainer image exists in the repository root:
    ```bash
-   docker run hello-world
+   ls ngiab_owp_openmpihpc.sif
    ```
-2. If permission errors appear, follow Docker post-install steps:
-   <https://docs.docker.com/engine/install/linux-postinstall/>
+2. Confirm the required modules are loaded:
+   ```bash
+   module list
+   ```
+3. Confirm parallel runs include `--oversubscribe`.
+4. Run a short serial test first by setting `execution_mode: "serial"` and `repetitions: 2`.
 
 ### Issue: Rank 0 does not run simulations
 
@@ -316,11 +330,12 @@ Verify:
 
 USGS portal: <https://waterdata.usgs.gov/nwis>
 
-### Issue: Docker command fails during model execution
+### Issue: Apptainer command fails during model execution
 
-1. Confirm image exists:
-   `docker images | grep awiciroh/ciroh-ngen-image`
-2. Confirm read/write permissions under `data_root`.
+1. Confirm the image exists at `./ngiab_owp_openmpihpc.sif`.
+2. Confirm you ran `apptainer pull docker://sifanak/ngiab:owp_openmpihpc` from inside the repository root.
+3. Confirm read/write permissions under `data_root`.
+4. Confirm the Apptainer and FUSE-related modules are loaded (`Apptainer`, `squashfuse`, and `gocryptfs`).
 
 ## Workflow
 
@@ -340,7 +355,7 @@ flowchart LR
     A(Create temporary ngen & troute output directories) --> B
     B[Create temporary config files] --> C
     C[Update output path in config files] --> D
-    D[Docker ngen & troute simulation] --> E
+    D[Apptainer ngen & troute simulation] --> E
     E[Evaluation/Metric Calculation] --> F
     F(Clean up temporary files and directories)
 ```

@@ -23,6 +23,7 @@ from plots import (
     plot_parametertrace,
 )
 import sys
+import subprocess
 
 
 def parameters_available_bool(
@@ -207,12 +208,18 @@ def print_calibration_configuration(args, size):
 
 
 def get_partitions(data_dir: Path, geopackage_path: Path) -> Path | None:
-    size = os.cpu_count() - 1  # reserving one core for system processes
+    size = min(100, os.cpu_count()-1)   # reserving one core for system processes
     partition_file = next(data_dir.glob(f"partitions_{size}.json"), None)
     if partition_file == None:
-        cmd_base = f"docker run --entrypoint python -w /ngen/ngen/data -v {data_dir}:/ngen/ngen/data awiciroh/ciroh-ngen-image /dmod/utils/partitioning/round_robin.py "
-        cmd_opts = f"./config/{geopackage_path.name} {size} ."
-        os.system(cmd_base + cmd_opts)
+        hpc_command = (
+            f"apptainer exec --cleanenv "
+            f"--bind {data_dir}:/ngen/ngen/data "
+            f"--pwd /ngen/ngen/data "
+            f"ngiab_owp_openmpihpc.sif "
+            f"python /dmod/utils/partitioning/round_robin.py "
+            f"./config/{geopackage_path.name} {size} ."
+        )
+        subprocess.run(hpc_command, shell=True, capture_output=True, text=True, check=True)
     partition_file = next(data_dir.glob(f"partitions_{size}.json"), None)
     return partition_file  # return last element to get largest partitions
 
@@ -507,4 +514,3 @@ def load_calibration_config(config_path: Path) -> dict[str, Any]:
     validate_config_choice(config_values, "execution_mode", uppercase=False)
     config_values["merge_catchment"] = str_to_bool(config_values["merge_catchment"])
     return config_values
-
