@@ -402,7 +402,6 @@ class SpotpySetup:
                 "Correlation": correlation,
             }
 
-        weighted_objective_list = []
         target_variable_items = list(self.model.target_variables.items())
         csv_row: dict[str, Any] = {"run_id": self.run_id}
         objective_list = []
