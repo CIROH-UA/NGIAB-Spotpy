@@ -7,10 +7,10 @@ norm: True
 target_variables:
   streamflow:
     observed_data_path: "~/ngiab_preprocess_output/10163000_observed_flow_2015-06-05_2015-08-05.csv"
-    weights: 1.0
-  # ET:
-  #   observed_data_path: "daily/et_daily_mean_2016_2023.csv"
-  #   weights: 0.3
+    weights: 0.7
+  ET:
+    observed_data_path: "daily/et_daily_mean_2016_2023.csv"
+    weights: 0.3
 
 
 algorithm: "DDS" #Available [DDS, NSGAII, SCE-UA]
