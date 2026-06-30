@@ -534,7 +534,7 @@ class SpotpySetup:
                 fig, ax = plt.subplots(figsize=(12, 6))
                 ax.bar(
                     [var_name for var_name, _ in target_variable_items],
-                    weighted_objective_list,
+                    objective_list,
                 )
                 ax.set_title(
                     f"Iteration {self.run_id} - Weighted Objective: {objective_metric:.3f}"
