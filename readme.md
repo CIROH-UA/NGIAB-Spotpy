@@ -177,22 +177,12 @@ mpirun -n 11 --oversubscribe python -m calibration --config config.yaml
 | `end_date` | string | Full simulation end date (`YYYY-MM-DD`) | `2015-08-15` |
 | `training_start_date` | string | Start of the calibration/evaluation window inside the simulation period | `2015-07-15` |
 | `data_root` | string | Parent folder containing `gage-{gage_id}` | `/home/user/data` |
-| `target_variables` | mapping | Observed data files and optional weights for each calibration target | see below |
-
-### `target_variables`
-
-```yaml
-target_variables:
-  streamflow:
-    observed_data_path: "/path/to/observed_streamflow.csv"
-    weight: 1.0
-```
 
 ### Optional Config Fields
 
 | Field | Type | Default | Options | Description |
 | --- | --- | --- | --- | --- |
-| `algorithm` | string | `DDS` | `SCE`, `DDS`, `NSGAII`| Search algorithm used by SPOTPY |
+| `algorithm` | string | `DDS` | `SCE`, `DDS`| Search algorithm used by SPOTPY |
 | `objective_function` | string | `KGE` | `KGE`, `RMSE` | Metric used to score each parameter set |
 | `repetitions` | integer | `100` | positive integer | Number of optimization iterations |
 | `dds_trials` | integer | `1` | positive integer | DDS restart trials (used only when `algorithm: "DDS"`) |
@@ -303,10 +293,6 @@ mpirun -n 20 --oversubscribe calibration --config config.yaml
 ### Issue: Rank 0 does not run simulations
 
 This is expected in parallel mode. Rank 0 coordinates work; worker ranks run the model.
-
-### Issue: Missing observed data file
-
-The script auto-downloads observed USGS streamflow if the `streamflow` target file is missing. ET and SWE files are not downloaded automatically and must be prepared before calibration.
 
 Verify:
 
