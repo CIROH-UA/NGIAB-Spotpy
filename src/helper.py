@@ -161,7 +161,7 @@ def prepare_config(data_dir: Path, execution_mode: str) -> None:
     realization_path = data_dir / "config" / "realization.json"
     troute_path = data_dir / "config" / "troute.yaml"
     gpkg_path = data_dir / "config" / f"{data_dir.name}_subset.gpkg"
-    print("Preparing configuration files for merged geopackage simulation...\n\n")
+    print("Preparing configuration for simulation...\n\n")
     # removing routing parameter from the realization file
     with realization_path.open("r") as file:
         realization: dict[str, Any] = json.load(file)
@@ -496,8 +496,8 @@ def load_calibration_config(config_path: Path) -> dict[str, Any]:
         "objective_function": "KGE",
         "repetitions": 100,
         "dds_trials": 1,
-        "execution_mode": "parallel",
-        "merge_catchment": True,
+        "execution_mode": "serial",
+        "merge_catchment": False,
         "merge_area": 200,
     }
     config_values = {**defaults, **calibration_config}
