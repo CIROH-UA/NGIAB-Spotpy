@@ -441,7 +441,10 @@ def process_usgs_streamflow(
 
     return dfo_usgs_hr
 
-def adjust_date_index(observed: pd.DataFrame, training_start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+def adjust_date_index(observed: pd.DataFrame, training_start_date: pd.Timestamp, end_date: pd.Timestamp, column_type: str) -> pd.DataFrame:
+    if observed["values"].isna().any():
+        print(f"There are {len(observed[observed['values'].isna()])} missing values in the observed {column_type} data. These will be dropped.\n\n")
+        observed = observed.dropna(subset=["values"])
     observed["Time"] = pd.to_datetime(observed["Time"]).dt.tz_localize(None)
     observed = observed[
         (observed["Time"] >= training_start_date)
@@ -535,8 +538,8 @@ def load_calibration_config(config_path: Path) -> dict[str, Any]:
         "objective_function": "KGE",
         "repetitions": 100,
         "dds_trials": 1,
-        "execution_mode": "parallel",
-        "merge_catchment": True,
+        "execution_mode": "serial",
+        "merge_catchment": False,
         "merge_area": 200,
         "n_pop": 10,
         "norm": False,

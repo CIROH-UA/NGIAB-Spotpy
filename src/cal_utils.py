@@ -52,13 +52,13 @@ class NextGenSetup:
         for var_name, var_info in target_variables.items():
             if var_name == "streamflow":
                 self.observed_streamflow = pd.read_csv(var_info["observed_data_path"])
-                self.observed_streamflow = adjust_date_index(self.observed_streamflow, self.training_start_date, self.end_date)
+                self.observed_streamflow = adjust_date_index(self.observed_streamflow, self.training_start_date, self.end_date, "streamflow")
             elif var_name == "ET":
                 self.observed_ET = pd.read_csv(var_info["observed_data_path"])
-                self.observed_ET = adjust_date_index(self.observed_ET, self.training_start_date, self.end_date)
+                self.observed_ET = adjust_date_index(self.observed_ET, self.training_start_date, self.end_date, "ET")
             elif var_name == "SWE":
                 self.observed_SWE = pd.read_csv(var_info["observed_data_path"])
-                self.observed_SWE = adjust_date_index(self.observed_SWE, self.training_start_date, self.end_date)
+                self.observed_SWE = adjust_date_index(self.observed_SWE, self.training_start_date, self.end_date, "SWE")
             else:
                 destroy_all_processes(f"Unsupported target variable: {var_name}")
                 return

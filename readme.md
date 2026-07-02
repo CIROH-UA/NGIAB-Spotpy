@@ -232,8 +232,8 @@ Time,values
 | `dds_trials` | integer | `1` | positive integer | DDS restart trials (used only when `algorithm: "DDS"`) |
 | `n_pop` | integer | `10` | positive integer | Population size for NSGAII (will be ignored when other algorithm is used)| 
 | `norm` | bool-like value | `false` | `true/false`, `yes/no`, `1/0` | Combine multiple target-variable scores using a normalized distance-style objective instead of the weighted sum |
-| `execution_mode` | string | `parallel` | `serial`, `parallel` | Controls MPI behavior |
-| `merge_catchment` | bool-like value | `true` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
+| `execution_mode` | string | `serial` | `serial`, `parallel` | Controls MPI behavior |
+| `merge_catchment` | bool-like value | `false` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
 | `merge_area` | float | `200` | positive float | Catchment area threshold in square km used to merge divides |
 
 ### Config Notes
