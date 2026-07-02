@@ -38,6 +38,10 @@ class NextGenSetup:
         self.training_start_date = pd.to_datetime(training_start_date)
         self.end_date = pd.to_datetime(end_date)
         self.observed = pd.read_csv(observed_flow_path)
+        if self.observed["values"].isna().any():
+            print(f"There are {len(self.observed[self.observed['values'].isna()])} NaN values in the observed flow data for gage {gage_id}. These will be dropped.\n\n")
+            self.observed = self.observed.dropna(subset=["values"])
+
         self.observed["Time"] = pd.to_datetime(self.observed["Time"]).dt.tz_localize(None)
         self.observed = self.observed[
             (self.observed["Time"] >= self.training_start_date)

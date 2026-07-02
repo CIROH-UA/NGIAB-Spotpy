@@ -186,8 +186,8 @@ mpirun -n 11 --oversubscribe python -m calibration --config config.yaml
 | `objective_function` | string | `KGE` | `KGE`, `RMSE` | Metric used to score each parameter set |
 | `repetitions` | integer | `100` | positive integer | Number of optimization iterations |
 | `dds_trials` | integer | `1` | positive integer | DDS restart trials (used only when `algorithm: "DDS"`) |
-| `execution_mode` | string | `parallel` | `serial`, `parallel` | Controls MPI behavior |
-| `merge_catchment` | bool-like value | `true` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
+| `execution_mode` | string | `serial` | `serial`, `parallel` | Controls MPI behavior |
+| `merge_catchment` | bool-like value | `false` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
 | `merge_area` | float | `200` | positive float | Catchment area threshold in square km used to merge divides |
 
 ### Config Notes
