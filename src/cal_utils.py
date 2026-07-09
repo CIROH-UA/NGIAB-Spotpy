@@ -335,14 +335,10 @@ class SpotpySetup:
                 plt.close(fig)
                 self.writer.flush()
 
+        if self.objective_function_name == "KGE":
+            objective_metric = objective_metric - 1
         if self.invert_objective:
-            if self.objective_function_name == "KGE":
-                objective_metric = 1 - objective_metric
-            else:
-                objective_metric = -objective_metric
-        else:
-            if self.objective_function_name == "KGE":
-                objective_metric = objective_metric - 1
+            objective_metric = (-1) * objective_metric
 
         self.run_id += 1
         return objective_metric
@@ -479,7 +475,7 @@ def run_spotpy(
 
     results = sampler.getdata()
     # Final results to TensorBoard
-    best_params = spotpy.analyser.get_best_parameterset(results, maximize=best_is_higher)
+    best_params = spotpy.analyser.get_best_parameterset(results, maximize=algorithm_maximizes)
 
     best_params_value = best_params[0]
 
