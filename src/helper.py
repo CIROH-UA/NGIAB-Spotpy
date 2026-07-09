@@ -208,7 +208,7 @@ def print_calibration_configuration(args, size):
 
 
 def get_partitions(data_dir: Path, geopackage_path: Path) -> Path | None:
-    size = min(100, os.cpu_count()-1)   # reserving one core for system processes
+    size = min(30, os.cpu_count()-1)   # reserving one core for system processes
     partition_file = next(data_dir.glob(f"partitions_{size}.json"), None)
     if partition_file == None:
         hpc_command = (
