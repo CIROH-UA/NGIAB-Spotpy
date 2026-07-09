@@ -497,26 +497,22 @@ class SpotpySetup:
                 for individual_kge in objective_list:
                     total_sum += (1 - individual_kge)**2  
 
-                #this might looks strange, but the math works out that way, and the it is multiplied with negative two times
-                #to preserve the standard of the code
+                #it is multiplied with negative because math works out that way. this can also be seen as a way to preserve best_is_higher, as kge
+                #increases, setting that to negative will also increase the objective metric
                 objective_metric = -(np.sqrt(total_sum))
             else:
                 for individual_RMSE in objective_list:
                     total_sum += individual_RMSE**2
-
+                #same explanation as above on why there is no negative sign here
                 objective_metric = np.sqrt(total_sum)
 
             if self.invert_objective:
                 objective_metric = (-1) * objective_metric
         else:
+            if self.objective_function_name == "KGE":
+                objective_metric = objective_metric - 1
             if self.invert_objective:
-                if self.objective_function_name == "KGE":
-                    objective_metric = 1 - objective_metric
-                else:
-                    objective_metric = (-1) * objective_metric
-            else:
-                if self.objective_function_name == "KGE":
-                    objective_metric = objective_metric - 1
+                objective_metric = (-1) * objective_metric
 
         if self.norm:
             csv_row["total_weighted_objective (norm)"] = objective_metric
