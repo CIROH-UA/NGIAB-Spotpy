@@ -680,10 +680,10 @@ def run_spotpy(
 
     elif algorithm == "DDS":
         if execution_mode == "serial":
-            sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv")
+            sampler = spotpy.algorithms.dds(optimizer, dbname=db_name, dbformat="csv", random_state = 42)
         else:
             sampler = spotpy.algorithms.dds(
-                optimizer, dbname=db_name, dbformat="csv", parallel="mpi"
+                optimizer, dbname=db_name, dbformat="csv", parallel="mpi", random_state = 42
             )
 
         if parameters_available:
@@ -709,7 +709,7 @@ def run_spotpy(
     results = sampler.getdata()
     
     # Final results to TensorBoard
-    best_params = spotpy.analyser.get_best_parameterset(results, maximize=best_is_higher)
+    best_params = spotpy.analyser.get_best_parameterset(results, maximize=algorithm_maximizes)
     best_params_value = best_params[0]
 
     if algorithm_maximizes:
