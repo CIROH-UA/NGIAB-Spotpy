@@ -339,10 +339,6 @@ def create_directories(data_dir: Path, objective_function: str) -> Path:
     #just for sanity
     if (data_dir / "calibration" / "temp_runs").exists():
         shutil.rmtree(data_dir / "calibration" / "temp_runs")
-    
-        #just for sanity
-    if (data_dir / "calibration" / "tensorboard_logs").exists():
-        shutil.rmtree(data_dir / "calibration" / "tensorboard_logs")
 
     #delete this to avoid output clutter
     if (data_dir / "calibration" / "spotpy").exists():
