@@ -46,7 +46,7 @@ This code:
    ```
 2. Checkout the branch.
    ```bash
-   git checkout Multi_Objective
+   git checkout Multi_Variable
    ```
 3. Install OpenMPI.
    - macOS:

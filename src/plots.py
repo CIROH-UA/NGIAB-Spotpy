@@ -323,6 +323,7 @@ def plot_bestmodelrun(
 
         print(f"Best individual CSV saved as {csv_path}")
         counter_evaluation += len(evaluation_key)
+        fig_name = "Best_Model_Run"  # Reset fig_name for next iteration
 
 
 # Optional: Add a new function for correlation heatmap
