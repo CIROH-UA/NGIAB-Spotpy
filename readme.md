@@ -68,7 +68,7 @@ This code:
   ```bash
    cargo install --git https://github.com/CIROH-UA/rs_route.git
   ```
-3. Check if the rust routing is installed
+3. Check if the rust routing is installed by typing following command.
    ```bash
       rs-route
    ```
