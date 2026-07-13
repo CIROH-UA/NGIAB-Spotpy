@@ -60,17 +60,18 @@ This code:
    module load SQLite
    module load squashfuse
    module load gocryptfs
+   module load uv
    ```
 
    If your HPC site uses versioned module names, use the matching local versions. The important pieces are Python, OpenMPI, Rust/Cargo, Apptainer, netCDF, HDF5, SQLite, and the FUSE support modules needed by Apptainer.
 
 2. Download rust routing because the simulation depends on rust routing
-  ```bash
+   ```bash
    cargo install --git https://github.com/CIROH-UA/rs_route.git
-  ```
+   ```
 3. Check if the rust routing is installed by typing following command.
    ```bash
-      rs-route
+   rs-route
    ```
 
 4. Clone the repository and enter it.
