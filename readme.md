@@ -115,7 +115,7 @@ This code:
    pip install -e .
    ```
 
-6. Use `--oversubscribe` for every parallel calibration run.
+8. Use `--oversubscribe` for every parallel calibration run.
 
    ```bash
    mpirun -n 11 --oversubscribe venv/bin/python -m calibration -c config.yaml
