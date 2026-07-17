@@ -196,7 +196,11 @@ class NextGenSetup:
 
         total_area = 0.0
 
-        files = glob.glob(os.path.join(tmp_root / "outputs" / "ngen", "cat-*.csv"))
+        if self.merge_catchment:
+            merged_lateral_dir = tmp_root / "outputs" / "ngen" / "merged"
+            files = glob.glob(os.path.join(merged_lateral_dir, "cat-*.csv"))
+        else:
+            files = glob.glob(os.path.join(tmp_root / "outputs" / "ngen", "cat-*.csv"))
 
         for _, file in enumerate(files, start=1):
 
