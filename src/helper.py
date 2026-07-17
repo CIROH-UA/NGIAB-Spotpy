@@ -144,7 +144,6 @@ def write_config(
     grouped: DefaultDict[str, dict[str, float]] = defaultdict(dict)
     for name, value in zip(param_models.keys(), params, strict=False):
         grouped[param_models[name]][name] = float(value)
-    breakpoint()
     for model_type_name, values in grouped.items():
         _update_parameters(Path(realization_path_name), values, model_type_name)
 
