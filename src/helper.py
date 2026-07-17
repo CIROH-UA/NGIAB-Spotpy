@@ -129,7 +129,8 @@ def _update_parameters(file_path: Path, param_updates: dict[str, Any], model_typ
     models = realization["global"]["formulations"][0]["params"]["modules"]
     for model in models:
         if model["params"]["model_type_name"] == model_type_name:
-            model["params"]["model_params"] = param_updates
+            for individual_param, new_value in param_updates.items():
+                model["params"]["model_params"][individual_param] = new_value
             break
     with open(file_path, "w") as f:
         json.dump(realization, f, indent=4)
@@ -143,6 +144,7 @@ def write_config(
     grouped: DefaultDict[str, dict[str, float]] = defaultdict(dict)
     for name, value in zip(param_models.keys(), params, strict=False):
         grouped[param_models[name]][name] = float(value)
+    breakpoint()
     for model_type_name, values in grouped.items():
         _update_parameters(Path(realization_path_name), values, model_type_name)
 
