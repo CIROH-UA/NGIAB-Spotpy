@@ -270,7 +270,7 @@ class NextGenSetup:
             elif var_name == "SWE":
                 simulated_swe = self.evaluate_ET_SWE(tmp_root, "SNEQV")
                 simulated_list.append(simulated_swe)
-        # shutil.rmtree(tmp_root, ignore_errors=True)
+        shutil.rmtree(tmp_root, ignore_errors=True)
         return simulated_list
 
 
