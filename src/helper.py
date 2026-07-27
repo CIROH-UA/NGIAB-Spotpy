@@ -129,8 +129,13 @@ def _update_parameters(file_path: Path, param_updates: dict[str, Any], model_typ
     models = realization["global"]["formulations"][0]["params"]["modules"]
     for model in models:
         if model["params"]["model_type_name"] == model_type_name:
-            for individual_param, new_value in param_updates.items():
-                model["params"]["model_params"][individual_param] = new_value
+            ## if model_params key doesn't exist, update model["params"]["model_params"] with param_updates
+            if "model_params" not in model["params"]:
+                model["params"]["model_params"] = param_updates
+            else:
+                #this help to only update the parameters that are in param_updates and not touch the other parameters
+                for individual_param, new_value in param_updates.items():
+                    model["params"]["model_params"][individual_param] = new_value
             break
     with open(file_path, "w") as f:
         json.dump(realization, f, indent=4)
