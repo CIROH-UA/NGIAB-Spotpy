@@ -77,7 +77,7 @@ This code:
 4. Clone the repository and enter it.
 
    ```bash
-   git clone https://github.com/CIROH-UA/NGIAB-Spotpy.git NGIAB-Spotpy_SL
+   git clone https://github.com/slama0077/NGIAB-Spotpy_SL.git
    cd NGIAB-Spotpy_SL
    ```
 
