@@ -60,11 +60,21 @@ This code:
    module load SQLite
    module load squashfuse
    module load gocryptfs
+   module load uv
    ```
 
    If your HPC site uses versioned module names, use the matching local versions. The important pieces are Python, OpenMPI, Rust/Cargo, Apptainer, netCDF, HDF5, SQLite, and the FUSE support modules needed by Apptainer.
 
-2. Clone the repository and enter it.
+2. Download rust routing because the simulation depends on rust routing
+   ```bash
+   cargo install --git https://github.com/CIROH-UA/rs_route.git
+   ```
+3. Check if the rust routing is installed by typing following command.
+   ```bash
+   rs-route
+   ```
+
+4. Clone the repository and enter it.
 
    ```bash
    git clone https://github.com/CIROH-UA/NGIAB-Spotpy.git NGIAB-Spotpy_SL
@@ -87,25 +97,25 @@ This code:
 
    Because the source code uses this relative path, run calibration from the repository root. The image belongs at the top level of the cloned repository, not inside `src/`.
 
-3. Verify MPI:
+5. Verify MPI:
 
    ```bash
    mpirun --version
    ```
 
-4. Create and activate a virtual environment:
+6. Create and activate a virtual environment:
 
    ```bash
    python -m venv venv
    source venv/bin/activate
    ```
-5. Install Python dependencies from `pyproject.toml`:
+7. Install Python dependencies from `pyproject.toml`:
 
    ```bash
    pip install -e .
    ```
 
-6. Use `--oversubscribe` for every parallel calibration run.
+8. Use `--oversubscribe` for every parallel calibration run.
 
    ```bash
    mpirun -n 11 --oversubscribe venv/bin/python -m calibration -c config.yaml
