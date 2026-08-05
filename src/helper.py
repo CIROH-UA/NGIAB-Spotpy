@@ -160,51 +160,35 @@ def get_troute_output_name(path: str | Path) -> str:
     return f"troute_output_{start_date.strftime('%Y%m%d%H%M')}.nc"
 
 
-def prepare_config(data_dir: Path, execution_mode: str, target_variables: dict) -> None:
+def prepare_config(data_dir: Path, start_date: str, end_date: str, execution_mode: str) -> None:
     """This function prepares the realization_file and t-route file
-    s.t. ngen and routing is done seperately"""
+    s.t. ngen and routing is done seperately. And also updates the start and end date in the realization file to match the user input. 
+    This is efficient because it avoids the need to run ngen and routing for the entire period, which can be time-consuming."""
 
     realization_path = data_dir / "config" / "realization.json"
     troute_path = data_dir / "config" / "troute.yaml"
     gpkg_path = data_dir / "config" / f"{data_dir.name}_subset.gpkg"
-    print("Preparing configuration files for merged geopackage simulation...\n\n")
+    print("Preparing configuration for simulation...\n\n")
     # removing routing parameter from the realization file
     with realization_path.open("r") as file:
         realization: dict[str, Any] = json.load(file)
     if "routing" in realization.keys():
         realization.pop("routing", None)
 
-    output_vars = []
-    for var_name in target_variables:
-        if var_name == "streamflow":
-            output_vars.append("Q_OUT")
-        elif var_name == "ET":
-            output_vars.append("ACTUAL_ET")
-        else:
-            output_vars.append("SNEQV")
+    #also change the start date and end date in the realization file, should be in the format ""2015-06-05 00:00:00""
+    realization["time"]["start_time"] = start_date + " 00:00:00"
+    realization["time"]["end_time"] = end_date + " 00:00:00"
 
-    for form in realization.get("global", {}).get("formulations", []):
-        if form.get("name") == "bmi_multi":
-            params = form.get("params", {})
-            if "modules" in params:
-                new_params = {}
-                for k, v in params.items():
-                    if k == "modules":
-                        new_params["output_variables"] = output_vars
-                    new_params[k] = v
-                form["params"] = new_params
-            else:
-                params["output_variables"] = output_vars
-                
     with realization_path.open("w") as file:
         json.dump(realization, file, indent=4)
-    
+
     # catchment routing should be done nexus routing is not an option for the merged geopackage
     # this doesn't preserve identation, but that shouldn't be an issue for the routing file
     with troute_path.open("r") as f:
         data = yaml.safe_load(f)
     data["compute_parameters"]["forcing_parameters"]["qlat_file_pattern_filter"] = "cat-*"
     data["compute_parameters"]["forcing_parameters"]["qlat_file_value_col"] = "Q_OUT"
+    data["compute_parameters"]["restart_parameters"]["start_datetime"] = start_date + "_00:00"
     with troute_path.open("w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, width=100)
 

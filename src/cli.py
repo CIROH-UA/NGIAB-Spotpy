@@ -75,8 +75,7 @@ def calibration(
         norm = norm,
     )
 
-    data_dir = data_root / f"gage-{gage_id}"
-    troute_output_path = data_dir / "outputs" / "troute" / get_troute_output_name(data_dir / "config" / "realization.json") 
+    data_dir = data_root / f"gage-{gage_id}" 
     tensorboard_logdir = data_dir / "calibration" / "tensorboard_logs"
 
     #need to define this to broadcast to other ranks
@@ -97,8 +96,9 @@ def calibration(
             clone_root = create_directories(data_dir, objective_function)
             prepare_config(
                 clone_root,
+                start_date=start_date,
+                end_date=end_date,
                 execution_mode=execution_mode,
-                target_variables=target_variables
             )
             if merge_catchment_bool:
                 groups = merge_and_prepare_forcing(
@@ -114,6 +114,8 @@ def calibration(
         comm.Barrier()
         feature_id = int(get_feature_id(clone_root))
         comm.Barrier()
+
+        troute_output_path = data_dir / "outputs" / "troute" / get_troute_output_name(clone_root / "config" / "realization.json")
 
         best_params, best_params_index = run_spotpy(
             gage_id,
