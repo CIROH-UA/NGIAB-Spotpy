@@ -65,7 +65,6 @@ def calibration(
 
     data_dir = data_root / f"gage-{gage_id}"
     observed_flow_path = data_root / f"{gage_id}_observed_flow_{start_date}_{end_date}.csv"
-    troute_output_path = data_dir / "outputs" / "troute" / get_troute_output_name(data_dir / "config" / "realization.json") 
     tensorboard_logdir = data_dir / "calibration" / "tensorboard_logs"
 
     #need to define this to broadcast to other ranks
@@ -98,6 +97,8 @@ def calibration(
             clone_root = create_directories(data_dir)
             prepare_config(
                 clone_root,
+                start_date=start_date,
+                end_date=end_date,
                 execution_mode=execution_mode,
             )
             if merge_catchment_bool:
@@ -115,6 +116,9 @@ def calibration(
         feature_id = int(get_feature_id(clone_root))
         comm.Barrier()
 
+        #troute output path might change if the user has different start and end dates than the original realization file, so we need to update the troute output path accordingly
+        troute_output_path = data_dir / "outputs" / "troute" / get_troute_output_name(clone_root / "config" / "realization.json")
+        
         best_params, best_params_index = run_spotpy(
             gage_id,
             start_date,
