@@ -1,6 +1,6 @@
 # NextGen Hydrologic Model Calibration
 
-This project calibrates NextGen model parameters with SPOTPY and supports both serial and MPI-parallel execution.
+A parallel calibration framework for NextGen hydrologic models, integrating SPOTPY and MPI to accelerate parameter estimation and uncertainty analysis.
 
 ## Table of Contents
 
