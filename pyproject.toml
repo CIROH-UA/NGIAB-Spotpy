@@ -36,8 +36,7 @@ dev = [
 calibration = "cli:main"
 
 [tool.setuptools]
-package-dir = {"" = "src", "merge_catchment" = "merge_catchment"}
-packages = ["merge_catchment"]
+package-dir = {"" = "src"}
 py-modules = ["calibration", "cli", "cal_utils", "helper", "plots", "flush_output"]
 
 [tool.ruff]

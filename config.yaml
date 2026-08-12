@@ -8,4 +8,3 @@ objective_function: "KGE" #Available [KGE, RMSE]
 repetitions: 10
 dds_trials: 1  #used for DDS, if other algorithm is used. otherwise, will be ignored.
 execution_mode: "serial" #Available [serial, parallel]
-merge_catchment: False

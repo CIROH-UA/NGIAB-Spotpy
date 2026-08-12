@@ -10,8 +10,6 @@ import pandas as pd
 import yaml
 from dataretrieval import nwis
 from mpi4py import MPI
-from merge_catchment.geopackage import GeoPackage
-from merge_catchment.interface import *
 import time
 import shutil
 from tensorboardX import SummaryWriter
@@ -182,7 +180,6 @@ def prepare_config(data_dir: Path, start_date: str, end_date: str, execution_mod
     with realization_path.open("w") as file:
         json.dump(realization, file, indent=4)
 
-    # catchment routing should be done nexus routing is not an option for the merged geopackage
     # this doesn't preserve identation, but that shouldn't be an issue for the routing file
     with troute_path.open("r") as f:
         data = yaml.safe_load(f)
@@ -230,98 +227,6 @@ def get_partitions(data_dir: Path, geopackage_path: Path) -> Path | None:
     return partition_file  # return last element to get largest partitions
 
 
-def merge_and_prepare_forcing(
-    data_dir: Path, execution_mode: str, merge_area: float
-) -> list[list[int]]:
-    """Merges the geopackage, prepares forcing data, and creates partitions for the merged geopackage simulation."""
-
-    #a better way to not flood the restore function with argument
-    global merge_area_string
-    merge_area_string = str(merge_area)
-
-    original_gpkg = data_dir / "config" / f"{data_dir.name}_subset.gpkg"
-    forcing_path = data_dir / "forcings" / "forcings.nc"
-    merged_geopackage = data_dir / "config" / "merged.gpkg"
-
-    #save the path stored in ~/.ngiab/preprocessor to a variable first
-    with open(Path("~/.ngiab/preprocessor").expanduser(), "r") as f:
-        preprocessor_path = f.read().strip()
-    #change the path stored in ~/.ngiab/preprocessor to the current data directory
-    os.system(f"echo {data_dir.parent} > ~/.ngiab/preprocessor")
-
-
-    realization = data_dir / "config" / "realization.json"
-    troute = data_dir / "config" / "troute.yaml"
-    start, end = get_dates(realization)
-
-    #back up these files because -r flag in preprocessing will alter the files
-    backup(realization)
-    backup(troute)
-
-    #delete the forcing file
-    forcing_path.unlink()
-
-    #both merged file exists, so just copy from the archive directory to avoid preprocessing
-    if (data_dir.parent.parent / "archive" / merge_area_string / "merged.gpkg").exists() and (data_dir.parent.parent / "archive" / merge_area_string / "forcings.nc").exists():
-        print(f"Found merged geopackage and forcing for merge_area {merge_area_string};so, using these merged files for calibration\n\n")
-        groups = group_catchments(original_gpkg, merge_area)
-        shutil.copy2(data_dir.parent.parent / "archive" / merge_area_string / "merged.gpkg", merged_geopackage)
-        shutil.copy2(data_dir.parent.parent / "archive" / merge_area_string / "forcings.nc", forcing_path)
-        backup(original_gpkg)
-
-        # rename merged geopackage to original in the folder
-        os.system(f"mv {merged_geopackage} {original_gpkg}")
-        
-        cmd = (f"uvx -p 3.10 ngiab-prep -i {data_dir.name} -o {data_dir.name} --start {start} --end {end} -r")
-        os.system(cmd)
-        os.system(f"mv {original_gpkg} {merged_geopackage}")
-        
-    else:
-        print("Merging geopackage and preparing forcing data...\n\n")
-        # merge the geopackage
-        try:
-            hf = GeoPackage(original_gpkg)
-            groups = group_catchments(original_gpkg, merge_area)
-            hf.merge(groups)
-            hf.save(merged_geopackage)
-        except Exception as e:
-            print(f"Merging failed with error: {e}\n\n")
-            print("The merge_area value might be too small. Bump that value up and try calibrating again.")
-            destroy_all_processes(f"Merging failed with error: {e}\n\nThe merge_area value might be too small. Bump that value up and try calibrating again.")
-            
-        backup(original_gpkg)
-        # rename merged geopackage to original in the folder
-        os.system(f"mv {merged_geopackage} {original_gpkg}")  
-        cmd = (
-            f"uvx -p 3.10 ngiab-prep -i {data_dir.name} -o {data_dir.name} --start {start} --end {end} -fr"
-        )
-
-        os.system(cmd)
-
-        # rename original geopackage back to merged in the folder
-        # with this, we will have both merged geopackage and the original one
-        os.system(f"mv {original_gpkg} {merged_geopackage}")
-    
-    restore(original_gpkg)
-    restore(realization)
-    restore(troute)
-
-    #renaming the path back tro default
-    os.system(f"echo {preprocessor_path} > ~/.ngiab/preprocessor")
-
-    # remove existing partiton files if any
-    partiton_files = list(data_dir.glob("partitions_*.json"))
-    if len(partiton_files) > 0:
-        os.system(f"rm -rf {data_dir}/partitions_*.json")
-
-    # only create partitions if the execution mode is serial as the ngen simulation runs in parallel mode
-    if execution_mode == "serial":
-        # partitions for merged geopackage
-        get_partitions(data_dir, merged_geopackage)
-
-    return groups
-
-
 def create_directories(data_dir: Path) -> Path:
     """Create necessary directories for Calibration before hand to avoid race conditions when multiple processes are trying to create the same directory at the same time."""
     #just for sanity
@@ -359,21 +264,7 @@ def create_directories(data_dir: Path) -> Path:
 
 
 def restore_data_dir(data_dir: Path) -> None:
-    """Removes merged geopackage,forcing data prepared for merged geopackage simulation. And removes
-    extra tmp yaml and json files created by staggering multiprocessing calibration. Also removes partiton files."""
-
-    #restore .bak files 
-
-    calibration_dir = data_dir.parent.parent
-    merged_geopackage = data_dir / "config" / "merged.gpkg"
-
-    if merged_geopackage.exists():
-        forcing_path = data_dir / "forcings" / "forcings.nc"
-        archive_dir = calibration_dir / "archive" / merge_area_string
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        os.system(f"mv {merged_geopackage} {archive_dir}")
-        if forcing_path.exists():
-            os.system(f"mv {forcing_path} {archive_dir}")
+    """Remove the temporary cloned calibration run directory."""
 
     # remove temporary cloned run directory (created under calibration/temp_runs)
     temp_runs_dir = data_dir.parent
@@ -430,18 +321,6 @@ def destroy_all_processes(message: str) -> None:
         print(f"Reported by process number: {rank}")
         print(f"Message: {message} \n\n\n")
     MPI.COMM_WORLD.Abort(rank)
-
-
-def str_to_bool(value: object) -> bool:
-    if isinstance(value, bool):
-        return value
-    value = str(value)
-    if value.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    if value.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    destroy_all_processes("Boolean value expected.")
-    return False
 
 
 def validate_config_choice(
@@ -507,14 +386,10 @@ def load_calibration_config(config_path: Path) -> dict[str, Any]:
         "repetitions": 100,
         "dds_trials": 1,
         "execution_mode": "serial",
-        "merge_catchment": False,
-        "merge_area": 200,
     }
     config_values = {**defaults, **calibration_config}
 
     validate_config_choice(config_values, "algorithm")
     validate_config_choice(config_values, "objective_function")
     validate_config_choice(config_values, "execution_mode", uppercase=False)
-    config_values["merge_catchment"] = str_to_bool(config_values["merge_catchment"])
     return config_values
-
