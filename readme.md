@@ -144,7 +144,6 @@ objective_function: "KGE"
 repetitions: 100
 dds_trials: 1
 execution_mode: "serial"
-merge_catchment: False
 ```
 
 ### 3) Run serial mode
@@ -153,16 +152,9 @@ merge_catchment: False
 python -m calibration --config config.yaml
 ```
 
-### 4) Run parallel mode with merge_catchment feature (recommended for speed)
+### 4) Run parallel mode
 
-Set these values in `config.yaml`:
-
-```yaml
-execution_mode: "parallel"
-merge_catchment: true
-```
-
-Then run with MPI:
+Set `execution_mode: "parallel"` in `config.yaml`, then run with MPI:
 
 ```bash
 mpirun -n 11 --oversubscribe python -m calibration --config config.yaml
@@ -187,8 +179,6 @@ mpirun -n 11 --oversubscribe python -m calibration --config config.yaml
 | `repetitions` | integer | `100` | positive integer | Number of optimization iterations |
 | `dds_trials` | integer | `1` | positive integer | DDS restart trials (used only when `algorithm: "DDS"`) |
 | `execution_mode` | string | `serial` | `serial`, `parallel` | Controls MPI behavior |
-| `merge_catchment` | bool-like value | `false` | `true/false`, `yes/no`, `1/0` | Enable or skip catchment merging/preprocessing step |
-| `merge_area` | float | `200` | positive float | Catchment area threshold in square km used to merge divides |
 
 ### Config Notes
 
@@ -232,10 +222,6 @@ data_root/gage-{gage_id}/
 │   │   └── plots/                       # Optional diagnostic plots
 │   ├── tensorboard_logs/
 │   │   └── <run_name>/
-│   └── archive/
-│       ├── {merge_area}/
-│           ├── merged.gpkg                  # Merged geopackage for a given merge area(when merge_catchment=True)
-│           └── forcings.nc                  # Forcings used for merged simulation
 └── config/
     └── realization.json             # Updated with best parameters
 ```

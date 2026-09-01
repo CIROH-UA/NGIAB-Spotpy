@@ -42,11 +42,8 @@ def calibration(
     repetitions = int(config_values["repetitions"])
     dds_trials = int(config_values["dds_trials"])
     execution_mode = str(config_values["execution_mode"])
-    merge_catchment = config_values["merge_catchment"]
-    merge_area = float(config_values["merge_area"])
   
     data_root = data_root.expanduser()
-    merge_catchment_bool = merge_catchment
 
     args = SimpleNamespace(
         gage_id=gage_id,
@@ -59,16 +56,12 @@ def calibration(
         repetitions=repetitions,
         dds_trials=dds_trials,
         execution_mode=execution_mode,
-        merge_catchment_bool=merge_catchment_bool,
-        merge_area=merge_area,
     )
 
     data_dir = data_root / f"gage-{gage_id}"
     observed_flow_path = data_root / f"{gage_id}_observed_flow_{start_date}_{end_date}.csv"
     tensorboard_logdir = data_dir / "calibration" / "tensorboard_logs"
 
-    #need to define this to broadcast to other ranks
-    groups = None
     clone_root = None
 
     if execution_mode == "serial" and size > 1:
@@ -101,17 +94,10 @@ def calibration(
                 end_date=end_date,
                 execution_mode=execution_mode,
             )
-            if merge_catchment_bool:
-                groups = merge_and_prepare_forcing(
-                    data_dir=clone_root,
-                    execution_mode=execution_mode,
-                    merge_area=float(merge_area),
-                )
             print_calibration_configuration(args=args, size=size)  
 
         comm.Barrier()
         clone_root = comm.bcast(clone_root, root=0)
-        groups = comm.bcast(groups, root=0)
         comm.Barrier()
         feature_id = int(get_feature_id(clone_root))
         comm.Barrier()
@@ -131,8 +117,6 @@ def calibration(
             rank,
             algorithm=algorithm,
             objective_function=objective_function,
-            groups=groups,
-            merge_catchment=merge_catchment_bool,
             calibration_params=CALIBRATION_PARAMS,
             tensorboard_logdir=tensorboard_logdir,
             repetitions=repetitions,

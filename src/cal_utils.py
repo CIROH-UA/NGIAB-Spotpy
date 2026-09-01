@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Sequence
 import matplotlib.pyplot as plt
 import mpi4py.MPI as MPI
 import numpy as np
@@ -29,9 +29,7 @@ class NextGenSetup:
         observed_flow_path: str | Path,
         troute_output_path: Path,
         data_dir: Path,
-        groups: Any,
         param_to_model: dict[str, str],
-        merge_catchment: bool,
         execution_mode: str = "parallel",
     ):
         self.gage_id = gage_id
@@ -51,9 +49,7 @@ class NextGenSetup:
         self.troute_output_path = troute_output_path
         self.realization_path = data_dir / "config" / "realization.json"
         self.data_dir = data_dir
-        self.groups = groups
         self.param_to_model = param_to_model
-        self.merge_catchment = merge_catchment
         self.execution_mode = execution_mode
     
     def run_model(
@@ -63,13 +59,9 @@ class NextGenSetup:
         troute_yaml: Path,
         temp_ngen_output_dir: Path,
         temp_troute_output_dir: Path,
-        groups: Any,
     ) -> None:
         #running nextgen simulation ro get lateral flows
-        if self.merge_catchment:
-            gpkg_path = Path("/ngen/ngen/data/config/merged.gpkg")
-        else:
-            gpkg_path = Path("/ngen/ngen/data/config") / f"{self.data_dir.name}_subset.gpkg"
+        gpkg_path = Path("/ngen/ngen/data/config") / f"{self.data_dir.name}_subset.gpkg"
 
         for failure_counter in range(10):
             try:
@@ -115,22 +107,6 @@ class NextGenSetup:
                     restore_data_dir(data_dir=self.data_dir)
                     destroy_all_processes(f"Failed to run ngen simulation.")
 
-            if self.merge_catchment:
-                merged_lateral_dir = temp_ngen_output_dir / "merged"
-                merged_lateral_dir.mkdir(exist_ok=True)
-
-                os.system(f"mv {temp_ngen_output_dir}/cat-*.csv {merged_lateral_dir}/")
-
-                for group_idx, cat_ids in enumerate(groups):
-                    merged_file_name = f"cat-{group_idx}.csv"
-
-                    for cat_id in cat_ids:
-                        os.symlink(
-                            temp_ngen_output_dir / "merged" / merged_file_name,
-                            temp_ngen_output_dir / f"cat-{cat_id}.csv",
-                        )
-
-       
             try:
                 subset_gpkg = tmp_root / "config" / f"{self.data_dir.name}_subset.gpkg"
 
@@ -266,7 +242,6 @@ class SpotpySetup:
             troute_config_path,
             ngen_output_dir,
             troute_output_dir,
-            self.model.groups,
         )
         return self.model.evaluate(tmp_root, self.feature_id)
 
@@ -357,8 +332,6 @@ def run_spotpy(
     rank: int,
     algorithm: str,
     objective_function: str,
-    groups: Any,
-    merge_catchment: bool,
     calibration_params: dict,
     tensorboard_logdir: Path,
     repetitions: int = 25,
@@ -385,9 +358,7 @@ def run_spotpy(
         observed_flow_path,
         troute_output_path,
         data_dir,
-        groups,
         param_to_model,
-        merge_catchment=merge_catchment,
         execution_mode=execution_mode,
     )  
 
