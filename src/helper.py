@@ -24,10 +24,12 @@ from plots import (
 )
 import sys
 import subprocess
+import numpy as np
 
 
 def parameters_available_bool(
     realization_path: str | Path,
+    params_name_dist_dict: dict[str, Any]
 ) -> tuple[bool, list[float] | dict[str, Any]]:
     """If parameters already exist in the realization file, use them
     as initial parameters. Only available for DDS algorithm."""
@@ -37,43 +39,38 @@ def parameters_available_bool(
     models_list = ["CFE", "NoahOWP"]
     parameters_available = False
     models_config = config["global"]["formulations"][0]["params"]["modules"]
-    parameters = {}
+    parameters_realization_file = {}
+    parameter_values = []
     for model_type_name in models_list:
         for model in models_config:
             if model["params"]["model_type_name"] == model_type_name:
                 if "model_params" in model["params"].keys():
                     parameters_available = True
-                    parameters.update(model["params"]["model_params"])
+                    parameters_realization_file.update(model["params"]["model_params"])
                 else:
                     parameters_available = False
                     break
 
     if parameters_available:
-        param_names = [
-            "b",
-            "satpsi",
-            "satdk",
-            "maxsmc",
-            "refkdt",
-            "expon",
-            "slope",
-            "max_gw_storage",
-            "Kn",
-            "Klf",
-            "Cgw",
-            "MFSNO",
-            "MP",
-            "RSURF_EXP",
-            "SNOW_EMIS",
-            "CWP",
-            "VCMX25",
-            "RSURF_SNOW",
-            "SCAMAX",
-        ]
-        # just taking the parameters that are in param_names
-        parameters = [v for k, v in parameters.items() if k in param_names]
+        for param_name, param_dist in params_name_dist_dict.items():
+            if param_name in parameters_realization_file:
+                param_value = np.float64(parameters_realization_file[param_name])
+                if param_value < param_dist.minbound or param_value > param_dist.maxbound:
+                    print(
+                        f"Parameter '{param_name}' value {param_value} is out of bounds ({param_dist.minbound}, {param_dist.maxbound})"
+                    )
+                    #clips the parameter value to be within the bounds of the distribution
+                    param_value = np.clip(param_value, param_dist.minbound, param_dist.maxbound)
 
-    return parameters_available, parameters
+                parameter_values.append(param_value)
+
+            else:
+                #if it is not in the realization file, but is in calibration_params, then sample it
+                #follows the same sampling method as spotpy, which is uniform sampling within the bounds of the distribution
+                param_value = param_dist.minbound + np.random.rand() * (param_dist.maxbound - param_dist.minbound)
+                parameter_values.append(param_value)
+
+    return parameters_available, parameter_values
 
 
 def log_parameters_from_spotpy_csv(
