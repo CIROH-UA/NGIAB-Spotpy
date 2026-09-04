@@ -341,14 +341,13 @@ def run_spotpy(
 ) -> Any:
     
     param_to_model = {name: model for model, names in calibration_params.items() for name in names}
-    params_names_list = []
+    params_name_dist_dict = {}
     # Add spotpy parameters to the optimizer so spotpy can sample them.
     # Doing it like this makes it easier to change and log parameter values.
     for _, params in calibration_params.items():
         for _name, _param in params.items():
             setattr(SpotpySetup, _name, _param)
-            params_names_list.append(_name)
-
+            params_name_dist_dict[_name] = _param
     # Model setup
     model_setup = NextGenSetup(
         gage_id,
@@ -410,9 +409,9 @@ def run_spotpy(
     db_name = f"{str(optimizer.output_dir)}/spotpy_results_{algorithm}_{objective_function}"
 
     realization_path = data_dir / "config" / "realization.json"
-    parameters_available, parameters = parameters_available_bool(realization_path)
+    parameters_available, parameters = parameters_available_bool(realization_path, params_name_dist_dict)
 
-    parameters_available = False
+    # parameters_available = False
     # FIX ME: there are some issues with initial parameters (even with the case of calibrated parameters) not being in the range
     # so for now, parameters_available is set to false to avoid using them as initial parameters for DDS algorithm. This needs to
     # be fixed in the future to fully utilize the benefits of DDS algorithm.
@@ -463,7 +462,7 @@ def run_spotpy(
     if writer:
         # Log the parameter traces for all iterations from the SPOTPY CSV database.
         csv_path = Path(f"{db_name}.csv")
-        log_parameters_from_spotpy_csv(writer, csv_path, params_names_list)
+        log_parameters_from_spotpy_csv(writer, csv_path, list(params_name_dist_dict.keys()))
         writer.close()
 
     # # Generate standard plots
